@@ -2,12 +2,14 @@
 //!
 //! Source: ETSI EN 300 468 §5.1.3 Table 2 plus ISO/IEC 13818-1 for MPEG tables.
 
+use num_enum::TryFromPrimitive;
+
 /// Typed `table_id` enumeration.
 ///
 /// Tables that occupy a range of values (EIT schedule 0x50..=0x5F and 0x60..=0x6F)
 /// are not listed as enum variants; see [`eit_schedule_actual_segment`] and
 /// [`eit_schedule_other_segment`] instead.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, TryFromPrimitive)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 #[allow(missing_docs)]
@@ -69,40 +71,6 @@ impl TableId {
     }
 }
 
-impl TryFrom<u8> for TableId {
-    type Error = u8;
-
-    fn try_from(v: u8) -> core::result::Result<Self, Self::Error> {
-        match v {
-            0x00 => Ok(Self::Pat),
-            0x01 => Ok(Self::Cat),
-            0x02 => Ok(Self::Pmt),
-            0x03 => Ok(Self::TransportStreamDescription),
-            0x40 => Ok(Self::NetworkInformationActual),
-            0x41 => Ok(Self::NetworkInformationOther),
-            0x42 => Ok(Self::ServiceDescriptionActual),
-            0x46 => Ok(Self::ServiceDescriptionOther),
-            0x4A => Ok(Self::BouquetAssociation),
-            0x4E => Ok(Self::EventInformationPfActual),
-            0x4F => Ok(Self::EventInformationPfOther),
-            0x70 => Ok(Self::TimeAndDate),
-            0x71 => Ok(Self::RunningStatus),
-            0x72 => Ok(Self::Stuffing),
-            0x73 => Ok(Self::TimeOffset),
-            0x74 => Ok(Self::ApplicationInformation),
-            0x75 => Ok(Self::Container),
-            0x76 => Ok(Self::RelatedContent),
-            0x77 => Ok(Self::ContentIdentifier),
-            0x78 => Ok(Self::MpeFec),
-            0x79 => Ok(Self::ResolutionNotification),
-            0x7A => Ok(Self::MpeIfec),
-            0x7E => Ok(Self::DiscontinuityInformation),
-            0x7F => Ok(Self::SelectionInformation),
-            other => Err(other),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,6 +108,19 @@ mod tests {
 
     #[test]
     fn unknown_value_rejected() {
-        assert_eq!(TableId::try_from(0x99), Err(0x99));
+        assert!(TableId::try_from(0x99).is_err());
+    }
+
+    #[test]
+    fn exhaustive_byte_sweep() {
+        let mut matched = 0u16;
+        for byte in 0u8..=0xFF {
+            if let Ok(id) = TableId::try_from(byte) {
+                assert_eq!(id as u8, byte, "round-trip failed for {byte:#04x}");
+                matched += 1;
+            }
+        }
+        // 24 defined variants
+        assert_eq!(matched, 24, "expected 24 matched variants");
     }
 }

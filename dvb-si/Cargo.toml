@@ -14,6 +14,7 @@ rust-version = "1.75"
 [dependencies]
 dvb_common  = { path = "../dvb_common" }
 thiserror   = "2"
+num_enum    = "0.7"
 chrono      = { version = "0.4", optional = true, default-features = false, features = ["clock"] }
 smallvec  = { version = "1.13", optional = true }
 serde     = { version = "1", optional = true, features = ["derive"] }

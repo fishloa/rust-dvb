@@ -2,6 +2,8 @@
 //!
 //! Indicates the alignment of video and audio data within the PES packets.
 
+use num_enum::TryFromPrimitive;
+
 use crate::error::{Error, Result};
 use crate::traits::Descriptor;
 use dvb_common::{Parse, Serialize};
@@ -12,7 +14,7 @@ const HEADER_LEN: usize = 2;
 const BODY_LEN: u8 = 1;
 
 /// Alignment type values per ISO/IEC 13818-1 Table 2-39.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
 #[repr(u8)]
 pub enum AlignmentType {
     /// Video access units start at the beginning of a PES packet.
@@ -23,23 +25,6 @@ pub enum AlignmentType {
     VideoAndAudioAccessUnit = 0x03,
     /// Reserved for future use.
     Reserved = 0x04,
-}
-
-impl TryFrom<u8> for AlignmentType {
-    type Error = Error;
-
-    fn try_from(value: u8) -> Result<Self> {
-        match value {
-            0x01 => Ok(AlignmentType::VideoAccessUnit),
-            0x02 => Ok(AlignmentType::AudioAccessUnit),
-            0x03 => Ok(AlignmentType::VideoAndAudioAccessUnit),
-            0x04 => Ok(AlignmentType::Reserved),
-            _ => Err(Error::InvalidDescriptor {
-                tag: TAG,
-                reason: "invalid alignment_type value",
-            }),
-        }
-    }
 }
 
 /// Data Stream Alignment Descriptor.
@@ -145,6 +130,18 @@ mod tests {
             AlignmentType::Reserved
         );
         assert!(AlignmentType::try_from(0xFF).is_err());
+    }
+
+    #[test]
+    fn exhaustive_byte_sweep() {
+        let mut matched = 0u16;
+        for byte in 0u8..=0xFF {
+            if let Ok(v) = AlignmentType::try_from(byte) {
+                assert_eq!(v as u8, byte, "round-trip failed for {byte:#04x}");
+                matched += 1;
+            }
+        }
+        assert_eq!(matched, 4, "expected 4 matched variants");
     }
 
     #[test]

@@ -36,6 +36,9 @@ pub mod well_known {
     /// Selection Information Table.
     pub const SIT: u16 = 0x001F;
 
+    /// ATSC PSIP base PID.
+    pub const ATSC_PSIP: u16 = 0x1FFB;
+
     /// Null-packet padding PID. Payload is ignored.
     pub const NULL: u16 = 0x1FFF;
 }
