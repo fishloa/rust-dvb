@@ -1,18 +1,18 @@
 [package]
-name         = "dvb_si"
+name         = "dvb-si"
 version      = "0.1.0"
 edition      = "2021"
 description  = "ETSI EN 300 468 DVB Service Information parser + builder. MPEG-2 PSI included."
-license      = "MIT OR Apache-2.0"
-authors      = ["Alex Fishlock"]
+license      = "MIT"
+authors      = ["Alex Fishlock <alex.fishlock@racingjag.com>"]
 keywords     = ["dvb", "mpeg", "broadcast", "si", "psi"]
 categories   = ["parser-implementations", "multimedia"]
-repository   = "https://github.com/fishloa/zenith"
+repository   = "https://github.com/fishloa/rust-dvb"
 readme       = "README.md"
 rust-version = "1.75"
 
 [dependencies]
-dvb_common  = { path = "../dvb_common" }
+dvb-common  = { path = "../dvb-common", version = "0.1" }
 thiserror   = "2"
 num_enum    = "0.7"
 chrono      = { version = "0.4", optional = true, default-features = false, features = ["clock"] }

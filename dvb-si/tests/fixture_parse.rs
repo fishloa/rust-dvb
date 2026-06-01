@@ -42,7 +42,7 @@ fn extract_sections_for_pid(path: &str, target_pid: u16) -> Vec<Vec<u8>> {
 
 #[test]
 fn fixture_m6_ait_sections_parse() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/m6-single.ts");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/m6-single.ts");
     let sections = extract_sections_for_pid(path, 0x00AA);
 
     assert!(
@@ -67,7 +67,7 @@ fn fixture_m6_ait_sections_parse() {
 
 #[test]
 fn fixture_m6_ait_round_trip() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/m6-single.ts");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/m6-single.ts");
     let sections = extract_sections_for_pid(path, 0x00AA);
 
     for sec in &sections {
@@ -84,7 +84,7 @@ fn fixture_m6_ait_round_trip() {
 
 #[test]
 fn fixture_m6_dsmcc_sections_parse() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/m6-single.ts");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/m6-single.ts");
     let sections = extract_sections_for_pid(path, 0x00AB);
 
     assert!(
@@ -114,7 +114,7 @@ fn fixture_m6_dsmcc_sections_parse() {
 
 #[test]
 fn fixture_m6_dsmcc_round_trip() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/m6-single.ts");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/m6-single.ts");
     let sections = extract_sections_for_pid(path, 0x00AB);
 
     for sec in &sections {
@@ -135,7 +135,7 @@ fn fixture_m6_dsmcc_round_trip() {
 
 #[test]
 fn fixture_tnt_isi6_nit_sections_parse() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/bbframe/tnt-5w-12732v-isi6-10s.ts");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/tnt-5w-12732v-isi6-10s.ts");
     let sections = extract_sections_for_pid(path, 0x0010);
 
     assert!(
@@ -165,7 +165,7 @@ fn fixture_tnt_isi6_nit_sections_parse() {
 
 #[test]
 fn fixture_tnt_isi6_nit_round_trip() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/bbframe/tnt-5w-12732v-isi6-10s.ts");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/tnt-5w-12732v-isi6-10s.ts");
     let sections = extract_sections_for_pid(path, 0x0010);
 
     let mut round_tripped = 0;

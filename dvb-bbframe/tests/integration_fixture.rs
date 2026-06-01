@@ -3,8 +3,8 @@
 // Fixtures live in the top-level zenith repo at tests/bbframe/. dvb_bbframe
 // borrows them via relative include_bytes! rather than duplicating the files.
 // This keeps a single source of truth for fixture data across the workspace.
-const TNT_FIXTURE: &[u8] = include_bytes!("../../../tests/bbframe/tnt-5w-12732v-bbframe.ts");
-const RAI_FIXTURE: &[u8] = include_bytes!("../../../tests/bbframe/rai-5w-12606v-bbframe.ts");
+const TNT_FIXTURE: &[u8] = include_bytes!("fixtures/tnt-5w-12732v-bbframe.ts");
+const RAI_FIXTURE: &[u8] = include_bytes!("fixtures/rai-5w-12606v-bbframe.ts");
 
 /// Walk a capture file and reassemble complete BBFrames from TS sections
 /// on a given PID. The section count byte `0xB8` marks the start of a new

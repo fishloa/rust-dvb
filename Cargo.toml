@@ -1,0 +1,10 @@
+[workspace]
+members = ["dvb-common", "dvb-si", "dvb-t2mi", "dvb-bbframe"]
+resolver = "2"
+
+[workspace.package]
+authors = ["Alex Fishlock <alex.fishlock@racingjag.com>"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/fishloa/rust-dvb"
+rust-version = "1.75"
