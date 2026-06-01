@@ -3,6 +3,8 @@
 //! Supports both Normal Mode (NM) and High Efficiency Mode (HEM)
 //! per EN 302 755 v1.4.1 §5.1.7.
 
+use num_enum::TryFromPrimitive;
+
 use crate::crc::{crc8, crc8_with_init, CRC8_INIT_DVB_T2};
 use crate::error::Error;
 
@@ -12,7 +14,7 @@ pub const BBHEADER_LEN: usize = 10;
 pub const DFL_MAX_BITS: u16 = 64800;
 
 /// Input stream format as described by the TS/GS field (MATYPE-1 bits [7:6]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
 #[repr(u8)]
 pub enum TsGs {
     /// Generic Packetized Stream.
@@ -25,23 +27,15 @@ pub enum TsGs {
     Gse = 0b10,
 }
 
-impl TryFrom<u8> for TsGs {
-    type Error = Error;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0b00 => Ok(TsGs::Gfps),
-            0b01 => Ok(TsGs::Gcs),
-            0b10 => Ok(TsGs::Gse),
-            0b11 => Ok(TsGs::Ts),
-            v => Err(Error::UnsupportedTsGs { ts_gs: v }),
-        }
-    }
-}
-
 impl From<TsGs> for u8 {
     fn from(t: TsGs) -> Self {
         t as u8
+    }
+}
+
+impl From<num_enum::TryFromPrimitiveError<TsGs>> for Error {
+    fn from(e: num_enum::TryFromPrimitiveError<TsGs>) -> Self {
+        Error::UnsupportedTsGs { ts_gs: e.number }
     }
 }
 
@@ -52,7 +46,7 @@ impl std::fmt::Display for TsGs {
 }
 
 /// Operating mode: Normal or High Efficiency.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
 #[repr(u8)]
 pub enum Mode {
     /// Normal Mode — UPL/SYNC/SYNCD present, CRC-8 per UP.
@@ -61,15 +55,9 @@ pub enum Mode {
     HighEfficiency = 1,
 }
 
-impl TryFrom<u8> for Mode {
-    type Error = Error;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Mode::Normal),
-            1 => Ok(Mode::HighEfficiency),
-            v => Err(Error::InvalidMode { mode: v }),
-        }
+impl From<num_enum::TryFromPrimitiveError<Mode>> for Error {
+    fn from(e: num_enum::TryFromPrimitiveError<Mode>) -> Self {
+        Error::InvalidMode { mode: e.number }
     }
 }
 
@@ -741,5 +729,29 @@ mod tests {
         // Real DVB-T2 BBFRAME header from Rai T2-MI (12606V, ISI 5, PLP 0).
         let hdr: [u8; BBHEADER_LEN] = [0xf8, 0x00, 0xa4, 0x28, 0xbc, 0xc8, 0xe2, 0x03, 0x50, 0x1f];
         assert_eq!(Bbheader::parse(&hdr).unwrap().dfl, 48328);
+    }
+
+    #[test]
+    fn exhaustive_tsgs_sweep() {
+        let mut matched = 0u16;
+        for byte in 0u8..=0xFF {
+            if let Ok(v) = TsGs::try_from(byte) {
+                assert_eq!(v as u8, byte, "round-trip failed for {byte:#04x}");
+                matched += 1;
+            }
+        }
+        assert_eq!(matched, 4, "expected 4 matched variants");
+    }
+
+    #[test]
+    fn exhaustive_mode_sweep() {
+        let mut matched = 0u16;
+        for byte in 0u8..=0xFF {
+            if let Ok(v) = Mode::try_from(byte) {
+                assert_eq!(v as u8, byte, "round-trip failed for {byte:#04x}");
+                matched += 1;
+            }
+        }
+        assert_eq!(matched, 2, "expected 2 matched variants");
     }
 }
