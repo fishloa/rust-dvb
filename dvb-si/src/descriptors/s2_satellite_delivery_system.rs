@@ -38,10 +38,13 @@ const TIMESLICE_FIELD_LEN: usize = 1;
 const FLAG_SCRAMBLING_SELECTOR: u8 = 0x80;
 const FLAG_MULTIPLE_INPUT_STREAM: u8 = 0x40;
 const FLAG_NOT_TIMESLICE: u8 = 0x10;
-/// TS_GS_mode occupies the bottom 2 bits of the flags byte (Table 43).
+/// TS_GS_mode occupies the bottom 2 bits of the flags byte; its value coding is
+/// Table 43 ("Coding of the TS GS mode"). The descriptor layout itself is Table 42.
 const TS_GS_MODE_MASK: u8 = 0x03;
-/// Reserved flag bits (bit 5 + bits 3..2); ignored on parse, set to 1 on serialize.
-const FLAG_RESERVED_BITS: u8 = 0x2C;
+/// Reserved flag bits set to 1 on serialize. Per §6.2.13.3 Table 42, bit 5 is
+/// `reserved_zero_future_use` (MUST be 0); only bits 3..2 (`reserved_future_use`)
+/// are set, giving 0x0C. All reserved bits are ignored on parse (§5.1).
+const FLAG_RESERVED_BITS: u8 = 0x0C;
 
 const SCRAMBLING_RESERVED_MASK: u8 = 0xFC;
 const SCRAMBLING_INDEX_HI_MASK: u8 = 0x03;

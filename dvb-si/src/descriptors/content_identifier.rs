@@ -16,6 +16,11 @@ const CRID_TYPE_MASK: u8 = 0xFC;
 const CRID_LOCATION_MASK: u8 = 0x03;
 
 /// CRID location per TS 102 323 Table 10.
+///
+/// Only the two defined locations are representable. Locations `0b10`/`0b11`
+/// are reserved with no defined payload length, so the parser rejects them
+/// (it cannot know how many bytes the entry occupies) rather than producing
+/// an un-round-trippable value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CridLocation<'a> {
@@ -23,11 +28,6 @@ pub enum CridLocation<'a> {
     Inline(#[cfg_attr(feature = "serde", serde(borrow))] &'a [u8]),
     /// Location 0b01 — CRID reference (CIT index).
     Reference(u16),
-    /// Other location — raw body not parsed.
-    Reserved {
-        /// Location value that was not recognised.
-        location: u8,
-    },
 }
 
 /// One CRID entry within a Content Identifier Descriptor.
@@ -150,7 +150,6 @@ impl Serialize for ContentIdentifierDescriptor<'_> {
             .map(|e| match &e.location {
                 CridLocation::Inline(data) => 2 + data.len(),
                 CridLocation::Reference(_) => 3,
-                CridLocation::Reserved { .. } => 1,
             })
             .sum();
         HEADER_LEN + body_len
@@ -182,10 +181,6 @@ impl Serialize for ContentIdentifierDescriptor<'_> {
                     buf[pos + 1] = bytes[0];
                     buf[pos + 2] = bytes[1];
                     pos += 3;
-                }
-                CridLocation::Reserved { location } => {
-                    buf[pos] = header | *location;
-                    pos += 1;
                 }
             }
         }

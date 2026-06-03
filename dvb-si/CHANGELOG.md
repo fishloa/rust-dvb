@@ -37,6 +37,24 @@ UTF-8 (selector 0x15), UCS-2 BE (0x11); Annex A.2 control codes.
 
 **Feature flags** — `chrono`, `ts`, `smallvec`, `serde`, `rayon`.
 
+### Fixed
+- `Tsdt` (0x03): removed a phantom `descriptor_loop_length` field — per
+  ISO/IEC 13818-1 §2.4.4.12 descriptors run directly from byte 8 to the CRC,
+  bounded by `section_length`.
+- `Nit` / `Sdt`: added the `section_number` / `last_section_number` fields
+  (previously parsed-and-discarded, serialized as 0), so multi-section
+  sub-tables round-trip faithfully.
+- `St` (0x72): byte-1 reserved nibble now `0x70` (reserved_future_use = 1),
+  matching the other short-form sections (DIT/RST/TDT/TOT).
+- `satellite_delivery_system` (0x43): corrected table cites — Polarization
+  Table 38, Roll-off Table 39, Modulation system Table 40, Modulation type
+  Table 41; `symbol_rate_bcd` masked to 28 bits on serialize.
+- `s2_satellite_delivery_system` (0x79): `reserved_zero_future_use` (bit 5) now
+  serialized as 0 per §6.2.13.3 Table 42 (was incorrectly 1).
+- `content_identifier` (0x76): dropped the unreachable `CridLocation::Reserved`
+  variant (reserved locations have no defined length and are rejected on parse).
+- Doc-cite fixes: `teletext` type coding is Table 102 (not 99).
+
 ### Notes
 - Tables and descriptors parse their outer structure with typed fields; nested
   descriptor and repeated loops are borrowed as raw `&[u8]` slices for the

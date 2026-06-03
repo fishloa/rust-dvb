@@ -36,8 +36,13 @@ impl From<SubpartVariety> for u16 {
 }
 
 impl From<num_enum::TryFromPrimitiveError<SubpartVariety>> for crate::error::Error {
-    fn from(e: num_enum::TryFromPrimitiveError<SubpartVariety>) -> Self {
-        crate::error::Error::InvalidPacketType { found: e.number as u8 }
+    fn from(_: num_enum::TryFromPrimitiveError<SubpartVariety>) -> Self {
+        // subpart_variety is a 16-bit field — casting the offending value to u8
+        // would truncate it, and InvalidPacketType is the wrong category anyway.
+        crate::error::Error::ReservedBitsViolation {
+            field: "subpart_variety",
+            reason: "Must be 0x0000..=0x0003 per ETSI TS 102 773 §5.2.12 Table 13",
+        }
     }
 }
 

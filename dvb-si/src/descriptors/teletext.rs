@@ -19,7 +19,7 @@ const LANG_LEN: usize = 3;
 pub struct TeletextEntry {
     /// ISO 639-2 language code of this teletext service.
     pub language_code: [u8; 3],
-    /// 5-bit teletext_type (ETSI Table 99): 1 = initial page, 2 = subtitle, etc.
+    /// 5-bit teletext_type (ETSI Table 102): 1 = initial page, 2 = subtitle, etc.
     pub teletext_type: u8,
     /// 3-bit teletext_magazine_number.
     pub magazine_number: u8,

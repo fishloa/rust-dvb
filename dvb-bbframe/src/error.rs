@@ -49,8 +49,13 @@ pub enum Error {
         have: usize,
     },
 
-    /// DFL field is outside the valid range (0..=53760 for DVB-T2).
-    #[error("DFL={dfl} bits exceeds maximum {max} bits (EN 302 755 Table 2)")]
+    /// DFL field is outside the valid range. The enforced ceiling `DFL_MAX_BITS`
+    /// (64800) is the DVB-S2 normal-FECFRAME data-field bound (EN 302 307-1
+    /// §5.1.4); DVB-T2 is tighter still (0..=53760, EN 302 755 Table 2).
+    #[error(
+        "DFL={dfl} bits exceeds maximum {max} bits (EN 302 307-1 §5.1.4 S2 normal frame; \
+         DVB-T2 tighter per EN 302 755 Table 2)"
+    )]
     DflOutOfRange {
         /// DFL value that was rejected.
         dfl: u16,

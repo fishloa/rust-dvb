@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn stream_content_masked_to_low_nibble() {
-        // Byte = 0xF2 → high nibble is reserved, low nibble is stream_content=2.
+        // Byte = 0xF2 → high nibble is stream_content_ext (0xF), low nibble is stream_content=2.
         let bytes = [TAG, 6, 0xF2, 0x00, 0x00, b'e', b'n', b'g'];
         let d = ComponentDescriptor::parse(&bytes).unwrap();
         assert_eq!(d.stream_content, 2);

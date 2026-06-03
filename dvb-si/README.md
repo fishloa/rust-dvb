@@ -19,10 +19,10 @@ implementation and is round-trip tested.
 - TDT (0x70), RST (0x71), ST (0x72), TOT (0x73), DIT (0x7E), SIT (0x7F)
 - **SAT — Satellite Access Table family (0x4D, §5.2.11)**: typed section header +
   `SatTableId` discriminant (position v2/v3, cell fragment, time association,
-  beamhopping time plan); bodies exposed raw, layout documented in `docs/tables/sat.md`
+  beamhopping time plan); bodies exposed raw, layout documented in `docs/en_300_468.md`
 
 **Companion-spec tables (share the DVB table_id space)**
-- AIT (0x74, TS 102 809), DSM-CC (0x3B/0x3C)
+- AIT (0x74, TS 102 809), DSM-CC (0x3A–0x3F)
 - **UNT** (0x4B, TS 102 006 — System Software Update)
 - **INT** (0x4C, EN 301 192 — IP/MAC Notification)
 - **RCT** (0x76), **CIT** (0x77), **RNT** (0x79) — TS 102 323 TV-Anytime

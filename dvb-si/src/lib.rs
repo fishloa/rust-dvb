@@ -3,7 +3,8 @@
 //! Entry points:
 //! - [`Parse`](dvb_common::Parse) / [`Serialize`](dvb_common::Serialize) — the two
 //!   symmetric contracts every table and descriptor implements.
-//! - [`tables`] — PAT, PMT, CAT, NIT, BAT, SDT, EIT, TDT, TOT, RST, DIT, SIT, ST, SAT.
+//! - [`tables`] — PAT, PMT, CAT, TSDT, NIT, BAT, SDT, EIT, TDT, TOT, RST, DIT, SIT,
+//!   ST, SAT, AIT, DSM-CC section, UNT, INT, RCT, CIT, RNT.
 //! - [`descriptors`] — every DVB descriptor (tags 0x40..0x7F) plus MPEG-2 descriptors.
 //! - [`pid::well_known`] — reserved DVB/MPEG-2 PIDs.
 //! - [`table_id::TableId`] — typed table_id enum.

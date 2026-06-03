@@ -17,6 +17,14 @@ field; it does **not** implement the physical layer (LDPC/BCH coding, modulation
 | `crc` | `crc8` — CRC-8 per EN 302 307-1 §5.1.4 / EN 302 755 Annex F. The NM/HEM mode is recovered from `computed_crc8 ^ stored_byte`. |
 | `issy` | ISSY (Input Stream Synchronizer) field parser, EN 302 755 Annex C. |
 
+## Features
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `serde` | off | `Serialize`/`Deserialize` derives on `Bbheader`, `Matype`, `TsGs`, `Mode`, `Issy` |
+
+`no_std` is not supported (`thiserror` requires `std`).
+
 ## Principles
 
 - **Spec fidelity** — every BBHEADER field is exposed; bit positions match EN 302 307-1 / EN 302 755.
