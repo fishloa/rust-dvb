@@ -48,11 +48,7 @@ impl<'a> Parse<'a> for AuxIqPayload<'a> {
         if !(AUX_ID_MIN..=AUX_ID_MAX).contains(&aux_id) {
             return Err(crate::Error::ReservedBitsViolation {
                 field: "aux_id",
-                reason: format!(
-                    "aux_id out of range {}..={}, got {}",
-                    AUX_ID_MIN, AUX_ID_MAX, aux_id
-                )
-                .leak() as &'static str,
+                reason: "aux_id out of range 1..=15 (ETSI TS 102 773 §5.2.2)",
             });
         }
 
@@ -91,11 +87,7 @@ impl Serialize for AuxIqPayload<'_> {
         if !(AUX_ID_MIN..=AUX_ID_MAX).contains(&self.aux_id) {
             return Err(crate::Error::ReservedBitsViolation {
                 field: "aux_id",
-                reason: format!(
-                    "aux_id out of range {}..={}, got {}",
-                    AUX_ID_MIN, AUX_ID_MAX, self.aux_id
-                )
-                .leak() as &'static str,
+                reason: "aux_id out of range 1..=15 (ETSI TS 102 773 §5.2.2)",
             });
         }
 

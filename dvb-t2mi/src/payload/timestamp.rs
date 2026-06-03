@@ -129,7 +129,7 @@ impl Serialize for T2TimestampPayload {
             });
         }
 
-        if self.seconds_since_2000 > 0xFFFFFF_FFFFFFFF {
+        if self.seconds_since_2000 > 0xFF_FFFF_FFFF {
             return Err(crate::Error::ReservedBitsViolation {
                 field: "seconds_since_2000",
                 reason: "Must fit in 40 bits",
