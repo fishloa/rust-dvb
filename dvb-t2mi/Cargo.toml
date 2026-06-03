@@ -7,7 +7,10 @@ license      = "MIT"
 authors      = ["Alex Fishlock <alex.fishlock@racingjag.com>"]
 keywords = ["dvb", "t2mi", "mpeg", "broadcast"]
 categories = ["parser-implementations", "multimedia"]
+repository   = "https://github.com/fishloa/rust-dvb"
+readme       = "README.md"
 rust-version = "1.75"
+exclude      = ["docs/**"]
 
 [dependencies]
 dvb-common = { path = "../dvb-common", version = "0.1" }

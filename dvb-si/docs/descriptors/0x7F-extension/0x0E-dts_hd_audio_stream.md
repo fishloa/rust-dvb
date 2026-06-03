@@ -1,0 +1,1244 @@
+# Dts Hd Audio Stream (extension sub-tag 0x0E)
+
+**Spec:** ETSI EN 300 468 v1.19.1 §G.2
+**Parser file:** `crates/dvb_si/src/descriptors/extension/0x0E-dts_hd_audio_stream.rs`
+**Rust struct:** `DtsHdAudioStreamDescriptor<'a>`
+
+## Tables
+
+### Table 109 — Possible locations of extended descriptors
+_PDF pages 112-112 (§6.4.0)_
+
+| Extended descriptor | Tag | NIT |  | BAT |  | SDT |  | EIT |  | TOT | PMT |  | SIT |  |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+|  | extension |  |  |  |  |  |  |  |  |  |  |  | (see |  |
+|  | value |  |  |  |  |  |  |  |  |  |  |  | note) |  |
+| image_icon_descriptor | 0x00 | ✓ |  | ✓ |  | ✓ |  | ✓ |  | - | - |  | ✓ |  |
+| cpcm_delivery_signalling_descriptor (see ETSI | 0x01 | - |  | - |  | ✓ |  | ✓ |  | - | - |  | - |  |
+| TS 102 825 [27] and ETSI TR 102 825 [i.5]) |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+| CP_descriptor (see ETSI TS 102 825 [27] and ETSI | 0x02 | - |  | - |  | - |  | - |  | - | ✓ |  | - |  |
+| TR 102 825 [i.5]) |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+| CP_identifier_descriptor (see ETSI TS 102 825 [27] | 0x03 | ✓ |  | ✓ |  | ✓ |  | ✓ |  | - | - |  | - |  |
+| and ETSI TR 102 825 [i.5]) |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+| T2_delivery_system_descriptor | 0x04 | ✓ |  | - |  | - |  | - |  | - | - |  | - |  |
+| SH_delivery_system_descriptor | 0x05 | ✓ |  | - |  | - |  | - |  | - | - |  | - |  |
+| supplementary_audio_descriptor | 0x06 | - |  | - |  | - |  | - |  | - | ✓ |  | - |  |
+| network_change_notify_descriptor | 0x07 | ✓ |  | - |  | - |  | - |  | - | - |  | - |  |
+| message_descriptor | 0x08 | ✓ |  | ✓ |  | ✓ |  | ✓ |  | - | - |  | - |  |
+| target_region_descriptor | 0x09 | ✓ |  | ✓ |  | ✓ |  | - |  | - | - |  | - |  |
+| target_region_name_descriptor | 0x0A | ✓ |  | ✓ |  | - |  | - |  | - | - |  | - |  |
+| service_relocated_descriptor | 0x0B | - |  | - |  | ✓ |  | - |  | - | - |  | - |  |
+| XAIT_PID_descriptor (see ETSI TS 102 727 [i.2]) | 0x0C | ✓ |  | ✓ |  | - |  | - |  | - | - |  | - |  |
+| C2_delivery_system_descriptor | 0x0D | ✓ |  | - |  | - |  | - |  | - | - |  | - |  |
+| DTS-HD_descriptor (see annex G) | 0x0E | - |  | - |  | - |  | - |  | - | ✓ |  | - |  |
+| DTS_Neural_descriptor (see annex L) | 0x0F | - |  | - |  | - |  | - |  | - | ✓ |  | - |  |
+| video_depth_range_descriptor | 0x10 | - |  | - |  | ✓ |  | ✓ |  | - | - |  | - |  |
+| T2MI_descriptor | 0x11 | - |  | - |  | - |  | - |  | - | ✓ |  | - |  |
+| reserved for future use | 0x12 | ✓ |  | ✓ |  | ✓ |  | ✓ |  |  | ✓ |  | ✓ |  |
+| URI_linkage_descriptor | 0x13 |  |  |  |  |  |  |  |  | - |  |  |  |  |
+| CI_ancillary_data_descriptor (see ETSI | 0x14 | ✓ |  | ✓ |  | ✓ |  | ✓ |  | - | - |  | - |  |
+| TS 103 205 [i.3]) |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+| AC-4_descriptor (see annex D) | 0x15 | - |  | - |  | - |  | - |  | - | ✓ |  | - |  |
+| C2_bundle_delivery_system_descriptor | 0x16 | ✓ |  | - |  | - |  | - |  | - | - |  | - |  |
+| S2X_satellite_delivery_system_descriptor | 0x17 | ✓ |  | - |  | - |  | - |  | - | - |  | - |  |
+| protection_message_descriptor (see ETSI | 0x18 | - |  | - |  | - |  | - |  | - | ✓ |  | - |  |
+| TS 102 809 [25]) |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+| audio_preselection_descriptor | 0x19 | - |  | - |  | - |  | - |  | - | ✓ |  | - |  |
+| reserved for future use | 0x1A to 0x1F |  |  |  |  |  |  |  |  |  |  |  |  |  |
+| TTML_subtitling_descriptor (see ETSI | 0x20 | - |  | - |  | - |  | - |  | - | ✓ |  | - |  |
+| EN 303 560 [12]) |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+| DTS-UHD_descriptor (see annex G) | 0x21 | - |  | - |  | - |  | - |  | - | ✓ |  | - |  |
+| service_prominence_descriptor | 0x22 | ✓ |  | ✓ |  | ✓ |  | - |  | - | - |  | - |  |
+|  |  |  |  |  |  | ✓ |  | ✓ |  |  | ✓ |  |  |  |
+| vvc_subpictures_descriptor | 0x23 | - |  | - |  |  |  |  |  | - |  |  | - |  |
+| S2Xv2_satellite_delivery_system_descriptor | 0x24 | ✓ |  | - |  | - |  | - |  | - | - |  | - |  |
+| reserved for future use | 0x25 to 0x7F |  |  |  |  |  |  |  |  |  |  |  |  |  |
+| user defined | 0x80 to 0xFF |  |  |  |  |  |  |  |  |  |  |  |  |  |
+| NOTE: Only found in Partial Transport Streams. |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+
+### Table 110 — Audio preselection descriptor
+_PDF pages 114-114 (§6.4.1)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| audio_preselection_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 5 | uimsbf |
+| num_preselections | 3 | bslbf |
+| reserved_zero_future_use | 5 | uimsbf |
+| for (i=0;i<N;i++) { | 3 | uimsbf |
+| preselection_id | 1 | bslbf |
+| audio_rendering_indication | 1 | bslbf |
+| audio_description | 1 | bslbf |
+| spoken_subtitles | 1 | bslbf |
+| dialogue_enhancement | 1 | bslbf |
+| interactivity_enabled | 1 | bslbf |
+| language_code_present | 1 | bslbf |
+| text_label_present | 1 | bslbf |
+| multi_stream_info_present | 24 | bslbf |
+| future_extension | 8 | uimsbf |
+| if (language_code_present == 0b1) { | 3 | uimsbf |
+| ISO_639_language_code | 5 | bslbf |
+| } | 8 | uimsbf |
+| if (text_label_present == 0b1) { | 3 | bslbf |
+| message_id | 5 | uimsbf |
+| } | 8 | uimsbf |
+| if (multi_stream_info_present == 0b1) { |  |  |
+| num_aux_components |  |  |
+| reserved_zero_future_use |  |  |
+| for (j=0;j<N;j++) { |  |  |
+| component_tag |  |  |
+| } |  |  |
+| } |  |  |
+| if (future_extension == 0b1) { |  |  |
+| reserved_zero_future_use |  |  |
+| future_extension_length |  |  |
+| for (j=0;j<N;j++) { |  |  |
+| future_extension_byte |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+
+### Table 111 — Audio rendering indication coding
+_PDF pages 115-115 (§6.4.1)_
+
+| audio_rendering_indication | Description |
+|---|---|
+| 0 | no preference given for the reproduction channel layout |
+| 1 | preferred reproduction channel layout is stereo |
+| 2 | preferred reproduction channel layout is two-dimensional (e.g. 5.1 multi-channel) |
+| 3 | preferred reproduction channel layout is three-dimensional |
+| 4 | content is pre-rendered for consumption with headphones |
+| 5 to 7 | reserved for future use |
+
+### Table 112 — CID ancillary data descriptor
+_PDF pages 116-116 (§6.4.3)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| CI_ancillary_data_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 8 | uimsbf |
+| for (i=0;i<N;i++) { |  |  |
+| ancillary_data_byte |  |  |
+| } |  |  |
+| } |  |  |
+
+### Table 113 — CP descriptor
+_PDF pages 116-116 (§6.4.3)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| CP_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 16 | uimsbf |
+| CP_system_id | 3 | bslbf |
+| reserved_future_use | 13 | uimsbf |
+| CP_PID | 8 | uimsbf |
+| for (i=0;i<N;i++) { |  |  |
+| private_data_byte |  |  |
+| } |  |  |
+| } |  |  |
+
+### Table 114 — CP identifier descriptor
+_PDF pages 117-117 (§6.4.6.1)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| CP_identifier_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 16 | uimsbf |
+| for (i=0;i<N;i++) { |  |  |
+| CP_system_id |  |  |
+| } |  |  |
+| } |  |  |
+
+### Table 115 — C2 delivery system descriptor
+_PDF pages 117-117 (§6.4.6.1)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| C2_delivery_system_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 8 | uimsbf |
+| plp_id | 8 | uimsbf |
+| data_slice_id | 32 | bslbf |
+| C2_System_tuning_frequency | 2 | uimsbf |
+| C2_System_tuning_frequency_type | 3 | bslbf |
+| active_OFDM_symbol_duration | 3 | bslbf |
+| guard_interval |  |  |
+| } |  |  |
+
+### Table 116 — C2 tuning frequency type coding
+_PDF pages 118-118 (§6.4.6.1)_
+
+| C2_System_tuning_frequency_type | Description |
+|---|---|
+| 0b00 | Data Slice tuning frequency |
+|  | This is the default option for DVB-C2 systems. The |
+|  | C2_System_tuning_frequency field conveys the tuning frequency of the data |
+|  | slice to which plp_id refers. The C2_System_tuning_frequency for a particular |
+|  | Data Slice is the sum of the L1 signalling parameters START_FREQUENCY |
+|  | and the DSLICE_TUNE_POS. Note that the Data Slice tuning frequency |
+|  | information in the Layer One (first or bottom-most layer) (L1) signalling as well |
+|  | as in the C2_delivery_system_descriptor have to be updated |
+|  | synchronously. |
+| 0b01 | C2 system centre frequency |
+|  | This option is used by DVB-C2 head-ends that are not able to update the Data |
+|  | Slice tuning frequency information in the C2_delivery_system_descriptor |
+|  | and the L1 signalling in a synchronous way. The |
+|  | C2_System_tuning_frequency is the centre frequency of the DVB-C2 system, |
+|  | and it is required that a complete Preamble can be received. The receiver |
+|  | needs to evaluate the L1 signalling in the preamble to get knowledge of the |
+|  | final tuning position. |
+| 0b10 | Initial tuning position for a (dependent) Static Data Slice |
+|  | Signalling of this option implies that the Data Slice to be demodulated is a |
+|  | (dependent) Static Slice. In the case of tuning to a (dependent) Static Data |
+|  | Slice, it cannot be guaranteed that the receiver is able to decode the L1 |
+|  | signalling at its final tuning position. Therefore the receiver will first tune to the |
+|  | signalled initial C2_System_tuning_frequency where a complete Preamble is |
+|  | transmitted. This frequency will usually be the DVB-C2 system centre |
+|  | frequency, but can be any tuning position where the receiver can reliably |
+|  | decode the L1 signal. The receiver needs to evaluate the L1 signalling in the |
+|  | preamble in order to determine additional parameters (particularly notch |
+|  | positions) as well as the final tuning frequency of the (dependent) Static Data |
+|  | Slice. |
+| 0b11 | reserved for future use. |
+
+### Table 117 — Active OFDM symbol duration coding
+_PDF pages 118-118 (§6.4.6.1)_
+
+| active_OFDM_symbol_duration | Description |
+|---|---|
+|  | μ |
+| 0b000 | 448 s (4k Fast Fourier Transform (FFT) mode for 8 MHz |
+|  | Cable Television (CATV) systems) |
+|  | μ |
+| 0b001 | 597,33 s (4k FFT mode for 6 MHz CATV systems) |
+| 0b010 to 0b111 | reserved for future use |
+
+### Table 118 — C2 guard interval coding
+_PDF pages 119-119 (§6.4.6.2)_
+
+| guard_interval | Description |
+|---|---|
+|  | 1/128 |
+| 0b000 | 1/64 |
+| 0b001 |  |
+| 0b0010 to 0b111 | reserved for future use |
+
+### Table 119 — SH delivery system descriptor
+_PDF pages 119-119 (§6.4.6.2)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| SH_delivery_system_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 4 | bslbf |
+| diversity_mode | 4 | bslbf |
+| reserved_future_use | 1 | bslbf |
+| for (i=0;i<N;i++) { | 1 | bslbf |
+| modulation_type | 1 | bslbf |
+| interleaver_presence | 5 | bslbf |
+| interleaver_type | 2 | bslbf |
+| reserved_future_use | 2 | bslbf |
+| if (modulation_type == 0b0) { | 2 | bslbf |
+| polarization | 4 | bslbf |
+| roll_off | 5 | bslbf |
+| modulation_mode | 1 | bslbf |
+| code_rate | 3 | bslbf |
+| symbol_rate | 1 | bslbf |
+| reserved_future_use | 3 | bslbf |
+| } else { | 4 | bslbf |
+| bandwidth | 2 | bslbf |
+| priority | 2 | bslbf |
+| constellation_and_hierarchy | 1 | bslbf |
+| code_rate | 6 | uimsbf |
+| guard_interval | 6 | uimsbf |
+| transmission_mode | 6 | uimsbf |
+| common_frequency | 8 | uimsbf |
+| } | 6 | uimsbf |
+| if (interleaver_presence == 0b1) { | 6 | uimsbf |
+| if (interleaver_type == 0b0) { | 2 | uimsbf |
+| common_multiplier |  |  |
+| nof_late_taps |  |  |
+| nof_slices |  |  |
+| slice_distance |  |  |
+| non_late_increments |  |  |
+| } else { |  |  |
+| common_multiplier |  |  |
+| reserved_future_use |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+
+### Table 120 — Diversity mode coding
+_PDF pages 120-120 (§6.4.6.2)_
+
+| diversity_mode | paTS | FEC diversity | FEC at PHY | FEC at link |
+|---|---|---|---|---|
+| 0b0000 | no | no | no | no |
+| 0b0001 to 0b0111 | reserved for future use |  |  |  |
+| 0b1000 | yes | no | no | no |
+| 0b1001 to 0b1100 | reserved for future use |  |  |  |
+| 0b1101 | yes | yes | no | yes |
+| 0b1110 | yes | yes | yes | no |
+| 0b1111 | yes | yes | yes | yes |
+
+### Table 121 — SH modulation type coding
+_PDF pages 120-120 (§6.4.6.2)_
+
+| modulation_type | Description |
+|---|---|
+| 0b0 | Time-Domain Multiplex (TDM) |
+| 0b1 | OFDM |
+
+### Table 122 — Interleaver presence coding
+_PDF pages 120-120 (§6.4.6.2)_
+
+| interleaver_presence | Description |
+|---|---|
+| 0b0 | no interleaver info follows |
+| 0b1 | an interleaver info follows |
+
+### Table 123 — Polarization coding
+_PDF pages 120-120 (§6.4.6.2)_
+
+| polarization | Description |
+|---|---|
+| 0b00 | linear - horizontal |
+| 0b01 | linear - vertical |
+| 0b10 | circular - left |
+| 0b11 | circular - right |
+
+### Table 124 — Roll-off factor
+_PDF pages 120-120 (§6.4.6.2)_
+
+| roll_off | Description |
+|---|---|
+|  | α |
+| 0b00 | = 0,35 |
+|  | α |
+| 0b01 | = 0,25 |
+|  | α |
+| 0b10 | = 0,15 |
+| 0b11 | reserved for future use |
+
+### Table 125 — Modulation mode coding
+_PDF pages 121-121 (§6.4.6.2)_
+
+| modulation_mode | Description |
+|---|---|
+| 0b00 | QPSK |
+| 0b01 | 8PSK |
+| 0b10 | 16-ary Amplitude and Phase Shift Keying (16APSK) |
+| 0b11 | reserved for future use |
+
+### Table 126 — Code rate coding
+_PDF pages 121-121 (§6.4.6.2)_
+
+| code_rate | Description |
+|---|---|
+| 0b0000 | 1/5 standard |
+| 0b0001 | 2/9 standard |
+| 0b0010 | 1/4 standard |
+| 0b0011 | 2/7 standard |
+| 0b0100 | 1/3 standard |
+| 0b0101 | 1/3 complementary |
+| 0b0110 | 2/5 standard |
+| 0b0111 | 2/5 complementary |
+| 0b1000 | 1/2 standard |
+| 0b1001 | 1/2 complementary |
+| 0b1010 | 2/3 standard |
+| 0b1011 | 2/3 complementary |
+| 0b1100 to 0b1111 | reserved for future use |
+
+### Table 127 — Symbol rate coding
+_PDF pages 121-121 (§6.4.6.2)_
+
+| symbol_rate | Equivalent | Equivalent guard | Symbol rate for | Symbol rate for | Symbol rate for |
+|---|---|---|---|---|---|
+|  | bandwidth | interval | α | α | α |
+|  |  |  | = 0,15 | = 0,25 | = 0,35 |
+| 0b0 0000 | 8 | 1/4 | 34/5 | 32/5 | 29/5 |
+| 0b0 0001 | 8 | 1/8 | 62/9 | 56/9 | 52/9 |
+| 0b0 0010 | 8 | 1/16 | 116/17 | 108/17 | 100/17 |
+| 0b0 0011 | 8 | 1/32 | 224/33 | 208/33 | 64/11 |
+| 0b0 0100 | 7 | 1/4 | 119/20 | 28/5 | 203/40 |
+| 0b0 0101 | 7 | 1/8 | 217/36 | 49/9 | 91/18 |
+| 0b0 0110 | 7 | 1/16 | 203/34 | 189/34 | 175/34 |
+| 0b0 0111 | 7 | 1/32 | 196/33 | 182/33 | 56/11 |
+| 0b0 1000 | 6 | 1/4 | 51/10 | 24/5 | 87/20 |
+| 0b0 1001 | 6 | 1/8 | 31/6 | 14/3 | 13/3 |
+| 0b0 1010 | 6 | 1/16 | 87/17 | 81/17 | 75/17 |
+| 0b0 1011 | 6 | 1/32 | 56/11 | 52/11 | 48/11 |
+| 0b0 1100 | 5 | 1/4 | 17/4 | 4/1 | 29/8 |
+| 0b0 1101 | 5 | 1/8 | 155/36 | 35/9 | 65/18 |
+| 0b0 1110 | 5 | 1/16 | 145/34 | 135/34 | 125/34 |
+| 0b0 1111 | 5 | 1/32 | 140/33 | 130/33 | 40/11 |
+| 0b1 0000 | 1,7 | 1/4 | 34/25 | 32/25 | 29/25 |
+| 0b1 0001 | 1,7 | 1/8 | 62/45 | 56/45 | 52/45 |
+| 0b1 0010 | 1,7 | 1/16 | 116/85 | 108/85 | 20/17 |
+| 0b1 0011 | 1,7 | 1/32 | 224/165 | 208/165 | 64/55 |
+| 0b1 0100 to 0b1 | reserved for future use |  |  |  |  |
+| 1111 |  |  |  |  |  |
+
+### Table 128 — Bandwidth coding
+_PDF pages 122-122 (§6.4.6.2)_
+
+| bandwidth | Description |
+|---|---|
+| 0b000 | 8 MHz |
+| 0b001 | 7 MHz |
+| 0b010 | 6 MHz |
+| 0b011 | 5 MHz |
+| 0b100 | 1,7 MHz |
+| 0b101 to 0b111 | reserved for future use |
+
+### Table 129 — Priority coding
+_PDF pages 122-122 (§6.4.6.2)_
+
+| constellation_and_hierarchy | priority | Description |
+|---|---|---|
+| 0b000 to 0b001 | 0b0 | n/a |
+|  | 0b1 | no priority mode |
+| 0b010 to 0b100 | 0b0 | LP |
+|  | 0b1 | HP |
+
+### Table 130 — Constellation and hierarchy coding
+_PDF pages 122-122 (§6.4.6.2)_
+
+| constellation_and_hierarchy | Description |
+|---|---|
+| 0b000 | QPSK |
+| 0b001 | 16QAM, non-hierarchical |
+|  | α |
+| 0b010 | 16QAM, hierarchical, = 1 |
+|  | α |
+| 0b011 | 16QAM, hierarchical, = 2 |
+|  | α |
+| 0b100 | 16QAM, hierarchical, = 3 |
+| 0b101 to 0b111 | reserved for future use |
+
+### Table 131 — Guard interval coding
+_PDF pages 122-122 (§6.4.6.2)_
+
+| guard_interval | Description |
+|---|---|
+| 0b00 | 1/32 |
+| 0b01 | 1/16 |
+| 0b10 | 1/8 |
+| 0b11 | 1/4 |
+
+### Table 132 — Transmission mode coding
+_PDF pages 122-122 (§6.4.6.2)_
+
+| transmission_mode | Description |
+|---|---|
+| 0b00 | 1k mode |
+| 0b01 | 2k mode |
+| 0b10 | 4k mode |
+| 0b11 | 8k mode |
+
+### Table 133 — T2 delivery system descriptor
+_PDF pages 124-124 (§6.4.6.3)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| T2_delivery_system_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 8 | uimsbf |
+| plp_id | 16 | uimsbf |
+| T2_system_id | 2 | bslbf |
+| if (descriptor_length > 4) { | 4 | bslbf |
+| SISO_MISO | 2 | bslbf |
+| bandwidth | 3 | bslbf |
+| reserved_future_use | 3 | bslbf |
+| guard_interval | 1 | bslbf |
+| transmission_mode | 1 | bslbf |
+| other_frequency_flag | 16 | uimsbf |
+| tfs_flag | 8 | uimsbf |
+| for (i=0;i<N;i++) { | 32 | uimsbf |
+| cell_id | 32 | uimsbf |
+| if (tfs_flag == 0b1) { | 8 | uimsbf |
+| frequency_loop_length | 8 | uimsbf |
+| for (j=0;j<N;j++) { | 32 | uimsbf |
+| centre_frequency |  |  |
+| } |  |  |
+| } else { |  |  |
+| centre_frequency |  |  |
+| } |  |  |
+| subcell_info_loop_length |  |  |
+| for (j=0;j<N;j++) { |  |  |
+| cell_id_extension |  |  |
+| transposer_frequency |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+
+### Table 134 — SISO/MISO mode coding
+_PDF pages 124-124 (§6.4.6.3)_
+
+| SISO_MISO | Description |
+|---|---|
+| 0b00 | Single Input, Single Output (SISO) |
+| 0b01 | Multiple Input, Single Output (MISO) |
+| 0b10 to 0b11 | reserved for future use |
+
+### Table 135 — Bandwidth coding
+_PDF pages 125-125 (§6.4.6.3)_
+
+| bandwidth | Description |
+|---|---|
+| 0b0000 | 8 MHz |
+| 0b0001 | 7 MHz |
+| 0b0010 | 6 MHz |
+| 0b0011 | 5 MHz |
+| 0b0100 | 10 MHz |
+| 0b0101 | 1,712 MHz |
+| 0b0110 to 0b1111 | reserved for future use |
+
+### Table 136 — Guard interval coding
+_PDF pages 125-125 (§6.4.6.3)_
+
+| guard_interval | Description |
+|---|---|
+| 0b000 | 1/32 |
+| 0b001 | 1/16 |
+| 0b010 | 1/8 |
+| 0b011 | 1/4 |
+| 0b100 | 1/128 |
+| 0b101 | 19/128 |
+| 0b110 | 19/256 |
+| 0b111 | reserved for future use |
+
+### Table 137 — Transmission mode coding
+_PDF pages 125-125 (§6.4.6.3)_
+
+| transmission_mode | Description |
+|---|---|
+| 0b000 | 2k mode |
+| 0b001 | 8k mode |
+| 0b010 | 4k mode |
+| 0b011 | 1k mode |
+| 0b100 | 16k mode |
+| 0b101 | 32k mode |
+| 0b110 to 0b111 | reserved for future use |
+
+### Table 138 — TFS flag coding
+_PDF pages 125-125 (§6.4.6.3)_
+
+| tfs_flag | Description |
+|---|---|
+| 0b0 | no TFS arrangement in place |
+| 0b1 | TFS arrangement in place |
+
+### Table 139 — C2 bundle delivery system descriptor
+_PDF pages 126-126 (§6.4.6.4)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| C2_bundle_delivery_system_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 8 | uimsbf |
+| for (i=0;i<N;i++) { | 8 | uimsbf |
+| plp_id | 32 | bslbf |
+| data_slice_id | 2 | uimsbf |
+| C2_System_tuning_frequency | 3 | bslbf |
+| C2_System_tuning_frequency_type | 3 | bslbf |
+| active_OFDM_symbol_duration | 1 | bslbf |
+| guard_interval | 7 | bslbf |
+| primary_channel |  |  |
+| reserved_zero_future_use |  |  |
+| } |  |  |
+| } |  |  |
+
+### Table 140 — S2X satellite delivery system descriptor
+_PDF pages 128-128 (§6.4.6.5.2)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| S2X_satellite_delivery_system_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 5 | bslbf |
+| receiver_profiles | 3 | bslbf |
+| reserved_zero_future_use | 2 | uimsbf |
+| S2X_mode | 1 | bslbf |
+| scrambling_sequence_selector | 3 | bslbf |
+| reserved_zero_future_use | 2 | bslbf |
+| TS_GS_S2X_mode | 6 | bslbf |
+| if (scrambling_sequence_selector == 0b1) { | 18 | uimsbf |
+| reserved_zero_future_use | 32 | bslbf |
+| scrambling_sequence_index | 16 | bslbf |
+| } | 1 | bslbf |
+| frequency (see note) | 2 | bslbf |
+| orbital_position (see note) | 1 | bslbf |
+| west_east_flag (see note) | 1 | bslbf |
+| polarization (see note) | 3 | bslbf |
+| multiple_input_stream_flag (see note) | 4 | bslbf |
+| reserved_zero_future_use | 28 | bslbf |
+| roll_off (see note) | 8 | uimsbf |
+| reserved_zero_future_use | 8 | uimsbf |
+| symbol_rate (see note) | 7 | bslbf |
+| if (multiple_input_stream_flag == 0b1) { | 1 | uimsbf |
+| input_stream_identifier (see note) | 32 | bslbf |
+| } | 16 | bslbf |
+| if (S2X_mode == 2) { | 1 | bslbf |
+| timeslice_number | 2 | bslbf |
+| } | 1 | bslbf |
+| if (S2X_mode == 3) { | 1 | bslbf |
+| reserved_zero_future_use | 3 | bslbf |
+| num_channel_bonds_minus_one | 4 | bslbf |
+| for (i=0;i<N;i++) { | 28 | bslbf |
+| frequency | 8 | uimsbf |
+| orbital_position | 8 | bslbf |
+| west_east_flag |  |  |
+| polarization |  |  |
+| bonded_channel_multiple_input_stream_flag |  |  |
+| reserved_zero_future_use |  |  |
+| roll_off |  |  |
+| reserved_zero_future_use |  |  |
+| symbol_rate |  |  |
+| if (bonded_channel_multiple_input_stream_flag == 0b1) { |  |  |
+| input_stream_identifier |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+| for (i=0;i<N;i++) { |  |  |
+| reserved_future_use |  |  |
+| } |  |  |
+| } |  |  |
+| NOTE: When channel bonding is used, these parameters describe the primary channel. |  |  |
+
+### Table 141 — Receiver profiles coding
+_PDF pages 129-129 (§6.4.6.5.2)_
+
+| receiver_profiles bit | Description |
+|---|---|
+| b(cid:0) (see note) | broadcast services |
+| b(cid:2) | interactive services |
+| b(cid:3) | DSNG services |
+| b(cid:4) | professional services |
+| b(cid:5) | Very Low Signal to Noise Ratio (VL-SNR) services |
+| NOTE: This bit is transmitted last (see clause 5.1.6). |  |
+
+### Table 142 — S2X mode coding
+_PDF pages 129-129 (§6.4.6.5.2)_
+
+| S2X_mode | Description |
+|---|---|
+| 0 | reserved for future use |
+| 1 | S2X |
+| 2 | S2X + time slicing |
+| 3 | S2X + channel bonding |
+
+### Table 143 — TS/GS S2X mode coding
+_PDF pages 129-129 (§6.4.6.5.2)_
+
+| TS_GS_S2X_mode (see note) | Description |
+|---|---|
+| 0 | generic packetized |
+| 1 | GSE |
+| 2 | GSE high efficiency mode |
+| 3 | DVB transport stream |
+| NOTE: These values are compatible with the coding of the TS/GS field in the |  |
+| BBFrame header of DVB-S2X (see clause 5.1.6 of ETSI EN 302 307-2 [8]). |  |
+
+### Table 144 — S2X roll off coding
+_PDF pages 129-129 (§6.4.6.5.2)_
+
+| roll_off | Description |
+|---|---|
+|  | α |
+| 0b000 | = 0,35 |
+|  | α |
+| 0b001 | = 0,25 |
+|  | α |
+| 0b010 | = 0,20 |
+| 0b011 | reserved for future use |
+|  | α |
+| 0b100 | = 0,15 |
+|  | α |
+| 0b101 | = 0,10 |
+|  | α |
+| 0b110 | = 0,05 |
+| 0b111 | reserved for future use |
+
+### Table 144a — S2Xv2 satellite delivery system descriptor
+_PDF pages 130-130 (§6.4.6.5.3)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| S2Xv2_satellite_delivery_system_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension |  |  |
+| S2Xv2_satellite_delivery_system_info() |  |  |
+| } |  |  |
+
+### Table 144b — S2Xv2 satellite delivery system info
+_PDF pages 131-131 (§6.4.6.5.3)_
+
+| Syntax | Number | Identifier |
+|---|---|---|
+|  | of bits |  |
+| S2Xv2_satellite_delivery_system_info() { | 32 | uimsbf |
+| delivery_system_id | 4 | uimsbf |
+| S2Xv2_mode | 1 | bslbf |
+| multiple_input_stream_flag | 3 | bslbf |
+| roll_off | 2 | bslbf |
+| reserved_zero_future_use | 1 | bslbf |
+| NCR_reference | 1 | bslbf |
+| NCR_version | 2 | uimsbf |
+| channel_bond | 2 | bsblf |
+| polarization | 1 | bslbf |
+| if (S2Xv2_mode == 1 or S2Xv2_mode == 2) { | 1 | bslbf |
+| scrambling_sequence_selector | 2 | bslbf |
+| } else { | 5 | bslbf |
+| reserved_zero_future_use | 24 | uimsbf |
+| } | 32 | bslbf |
+| TS_GS_S2X_mode | 32 | bslbf |
+| receiver_profiles | 8 | uimsbf |
+| satellite_id | 6 | bslbf |
+| frequency | 18 | uimsbf |
+| symbol_rate | 8 | uimsbf |
+| if (multiple_input_stream_flag == 1) { | 7 | bslbf |
+| input_stream_identifier | 1 | uimsbf |
+| } | 32 | uimsbf |
+| if (S2Xv2_mode == 1 or S2Xv2_mode == 2) { | 8 | uimsbf |
+| if (scrambling_sequence_selector == 1) { | 1 | bsblf |
+| reserved_zero_future_use | 1 | bsblf |
+| scrambling_sequence_index | 2 | bsblf |
+| } | 20 | uimsbf |
+| } | 4 | bslf |
+| if (S2Xv2_mode == 2 or S2Xv2_mode == 5) { | 4 | bsblf |
+| timeslice_number | 20 | uimsbf |
+| } | 32 | uimsbf |
+| if (channel_bond == 1) { | 5 | uimsbf |
+| reserved_zero_future_use | 3 | bslf |
+| num_channel_bonds_minus_one | 8 | bslbf |
+| for (i=0;i<N;i++) { |  |  |
+| secondary_delivery_system_id |  |  |
+| } |  |  |
+| } |  |  |
+| if (S2Xv2_mode == 4 or S2Xv2_mode == 5) { |  |  |
+| SOSF_WH_sequence_number |  |  |
+| SFFI_selector |  |  |
+| beam_hopping_time_plan_selector |  |  |
+| reserved_zero_future_use |  |  |
+| reference_scrambing_index |  |  |
+| if (SFFI_selector == 1) { |  |  |
+| SFFI |  |  |
+| } else { |  |  |
+| reserved_zero_future_use |  |  |
+| } |  |  |
+| payload_scrambling_index |  |  |
+| if (beam_hopping_time_plan_selector == 1) { |  |  |
+| beamhopping_time_plan_id |  |  |
+| } |  |  |
+| superframe_pilots_WH_sequence_number |  |  |
+| postamble_PLI |  |  |
+| } |  |  |
+| for (i=0;i<N;i++) { |  |  |
+| reserved_zero_future_use |  |  |
+| } |  |  |
+| } |  |  |
+
+### Table 144c — S2Xv2 mode coding
+_PDF pages 132-132 (§6.4.6.5.3)_
+
+| S2Xv2_mode | Description |
+|---|---|
+| 0 | reserved for future use |
+| 1 | S2X |
+| 2 | S2X + time slicing |
+| 3 | reserved for future use |
+| 4 | S2X superframe (Annex E of ETSI EN 302 307-2 [8]) |
+| 5 | S2X superframe (Annex E of ETSI EN 302 307-2 [8]) + |
+|  | timeslicing (Annex M of ETSI EN 302 307-1 [7]) |
+| 6-15 | reserved for future use |
+
+### Table 144d — NCR version coding
+_PDF pages 132-132 (§6.4.6.5.3)_
+
+| NCR_reference | Description |
+|---|---|
+| 0 | The first symbol of the Start Of Frame field of the relevant DVB-S2 or DVB-S2X |
+|  | physical layer frame |
+| 1 | The first symbol of the Start Of Superframe (SOSF) field of the ETSI |
+|  | EN 302 307-2 [8], annex E superframe |
+| NCR_version | Description |
+| 0 | NCR |
+| 1 | NCR_v2 |
+
+### Table 144e — channel bond coding
+_PDF pages 133-133 (§6.4.6.5.3)_
+
+| channel_bond | Description |
+|---|---|
+| 0 | Not part of a channel bond |
+| 1 | Channel bond primary |
+| 2 | Channel bond secondary |
+| 3 | Reserved for future use |
+
+### Table 144f — Postamble PLI
+_PDF pages 134-134 (§6.4.7)_
+
+| PLI | Description |
+|---|---|
+| 0 | Identical to the Superframe PLI |
+| 1 to 3 | Reserved |
+| 4 | L= 180 symbols |
+| 5 | L=360 symbols |
+| 6 | L= 900 symbols |
+| 7 | L = 90 symbols |
+
+### Table 145 — Image icon descriptor
+_PDF pages 135-135 (§6.4.7)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| image_icon_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 4 | uimsbf |
+| descriptor_number | 4 | uimsbf |
+| last_descriptor_number | 5 | uimsbf |
+| reserved_future_use | 3 | uimsbf |
+| icon_id | 2 | uimsbf |
+| if (descriptor_number == 0x00) { | 1 | bslbf |
+| icon_transport_mode | 3 | uimsbf |
+| position_flag | 2 | bslbf |
+| if (position_flag == 0b1 | 12 | uimsbf |
+| coordinate_system | 12 | uimsbf |
+| reserved_future_use | 5 | bslbf |
+| icon_horizontal_origin | 8 | uimsbf |
+| icon_vertical_origin | 8 | uimsbf |
+| } else { | 8 | uimsbf |
+| reserved_future_use | 8 | uimsbf |
+| } | 8 | uimsbf |
+| icon_type_length | 8 | uimsbf |
+| for (i=0;i<N;i++) { | 8 | uimsbf |
+| icon_type_char | 8 | uimsbf |
+| } |  |  |
+| if (icon_transport_mode == 0) { |  |  |
+| icon_data_length |  |  |
+| for (i=0;i<N;i++) { |  |  |
+| icon_data_byte |  |  |
+| } |  |  |
+| } else if (icon_transport_mode == 1) { |  |  |
+| url_length |  |  |
+| for (i=0;i<N;i++) { |  |  |
+| url_char |  |  |
+| } |  |  |
+| } |  |  |
+| } else { |  |  |
+| icon_data_length |  |  |
+| for (i=0;i<N;i++) { |  |  |
+| icon_data_byte |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+
+### Table 146 — Icon transport mode coding
+_PDF pages 136-136 (§6.4.8)_
+
+| icon_transport_mode | Description |
+|---|---|
+| 0 | the icon is delivered in the icon_data_byte sequence of bytes |
+| 1 | the location of the icon file is identified by the URL conveyed in |
+|  | the url_char sequence of bytes |
+| 2 to 3 | reserved for future use |
+
+### Table 147 — Coordinate system coding
+_PDF pages 136-136 (§6.4.8)_
+
+| coordinate_system | Description |
+|---|---|
+| 0 | the coordinate system is 720 × 576 |
+| 1 | the coordinate system is 1 280 × 720 |
+| 2 | the coordinate system is 1 920 × 1 080 |
+| 3 to 6 | reserved for future use |
+| 7 | user defined |
+
+### Table 148 — Message descriptor
+_PDF pages 137-137 (§6.4.9)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| message_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 8 | uimsbf |
+| message_id | 24 | bslbf |
+| ISO_639_language_code | 8 | uimsbf |
+| for (i=0;i<N;i++) { |  |  |
+| text_char |  |  |
+| } |  |  |
+| } |  |  |
+
+### Table 149 — Network change notify descriptor
+_PDF pages 138-138 (§6.4.9)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| network_change_notify_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 16 | uimsbf |
+| for (i=0;i<N;i++) { | 8 | uimsbf |
+| cell_id | 8 | uimsbf |
+| loop_length | 8 | uimsbf |
+| for (j=0;j<N;j++) { | 40 | bslbf |
+| network_change_id | 24 | uimsbf |
+| network_change_version | 3 | uimsbf |
+| start_time_of_change | 1 | bslbf |
+| change_duration | 4 | uimsbf |
+| receiver_category | 8 | uimsbf |
+| invariant_ts_present | 16 | uimsbf |
+| change_type | 16 | uimsbf |
+| message_id |  |  |
+| if (invariant_ts_present == 0b1) { |  |  |
+| invariant_ts_tsid |  |  |
+| invariant_ts_onid |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+
+### Table 150 — Receiver category coding
+_PDF pages 138-138 (§6.4.9)_
+
+| receiver_category | Description |
+|---|---|
+| 0 | all receivers |
+| 1 | DVB-T2, or DVB-S2, or DVB-C2 capable receivers only |
+| 2 to 7 | reserved for future use |
+
+### Table 151 — Change type coding
+_PDF pages 139-139 (§6.4.10)_
+
+| change_type | Description |
+|---|---|
+| 0 | message only |
+| 1 | minor - default |
+| 2 | minor - multiplex removed |
+| 3 | minor - service changed |
+| 4 to 7 | reserved for future use for other minor changes |
+| 8 | major - default |
+| 9 | major - multiplex frequency changed |
+| 10 | major - multiplex coverage changed |
+| 11 | major - multiplex added |
+| 12 to 15 | reserved for future use for other major changes |
+
+### Table 152 — Service relocated descriptor
+_PDF pages 139-139 (§6.4.10)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| service_relocated_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 16 | uimsbf |
+| old_original_network_id | 16 | uimsbf |
+| old_transport_stream_id | 16 | uimsbf |
+| old_service_id |  |  |
+| } |  |  |
+
+### Table 153 — Supplementary audio descriptor
+_PDF pages 141-141 (§6.4.11)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| supplementary_audio_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 1 | uimsbf |
+| mix_type | 5 | uimsbf |
+| editorial_classification | 1 | bslbf |
+| reserved_future_use | 1 | uimsbf |
+| language_code_present | 24 | bslbf |
+| if (language_code_present == 0b1) { | 8 | uimsbf |
+| ISO_639_language_code |  |  |
+| } |  |  |
+| for (i=0;i<N;i++) { |  |  |
+| private_data_byte |  |  |
+| } |  |  |
+| } |  |  |
+
+### Table 154 — Mix type coding
+_PDF pages 141-141 (§6.4.11)_
+
+| mix_type (see note) | Description |
+|---|---|
+| 0 | the audio stream is a dependent stream and is intended to be mixed or combined |
+|  | with a separate complete and independent audio stream by the receiver |
+| 1 | the audio stream is a complete and independent stream |
+| NOTE: Restrictions on valid combinations of audio_type, mix_type, and editorial_classification are |  |
+| given in clause J.4. |  |
+
+### Table 155 — Editorial classification coding
+_PDF pages 141-141 (§6.4.11)_
+
+| editorial_classification | Description |
+|---|---|
+| (see note) |  |
+| 0x00 | main audio (contains all of the main audio components and can be |
+|  | presented on its own or mixed with a supplementary audio stream) |
+|  | This classification shall not be used for broadcast-mix audio (see |
+|  | clause J.3) e.g. audio streams that are premixed with visual impaired or |
+|  | hearing impaired audio. |
+| 0x01 | audio description for the visually impaired (contains a spoken description |
+|  | of the visual content of the service) |
+| 0x02 | clean audio for the hearing impaired |
+| 0x03 | spoken subtitles for the visually impaired |
+| 0x04 | dependent parametric data stream (not embedded) |
+| 0x05 to 0x16 | reserved for future use |
+| 0x17 | unspecific supplementary audio for the general audience |
+| 0x18 to 0x1F | user defined |
+| NOTE: Restrictions on valid combinations of audio_type, mix_type, and editorial_classification are |  |
+| given in clause J.4. |  |
+
+### Table 156 — Target region descriptor
+_PDF pages 143-143 (§6.4.12)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| target_region_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 24 | bslbf |
+| country_code | 5 | bslbf |
+| for (i=0;i<N;i++) { | 1 | bslbf |
+| reserved_future_use | 2 | uimsbf |
+| country_code_flag | 24 | bslbf |
+| region_depth | 8 | uimsbf |
+| if (country_code_flag == 0b1) { | 8 | uimsbf |
+| country_code | 16 | uimsbf |
+| } |  |  |
+| if (region_depth >= 1) { |  |  |
+| primary_region_code |  |  |
+| if (region_depth >= 2) { |  |  |
+| secondary_region_code |  |  |
+| if (region_depth == 3) { |  |  |
+| tertiary_region_code |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+
+### Table 157 — Target region name descriptor
+_PDF pages 144-144 (§6.4.13)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| target_region_name_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 24 | bslbf |
+| country_code | 24 | bslbf |
+| ISO_639_language_code | 2 | uimsbf |
+| for (i=0;i<N;i++) { | 6 | uimsbf |
+| region_depth | 8 | uimsbf |
+| name_length | 8 | uimsbf |
+| for (j=0;j<N;j++) { | 8 | uimsbf |
+| char | 16 | uimsbf |
+| } |  |  |
+| primary_region_code |  |  |
+| if (region_depth >= 2) { |  |  |
+| secondary_region_code |  |  |
+| if (region_depth == 3) { |  |  |
+| tertiary_region_code |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+
+### Table 158 — T2-MI descriptor
+_PDF pages 145-145 (§6.4.14)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| T2MI_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 5 | bslbf |
+| reserved_zero_future_use | 3 | uimsbf |
+| t2mi_stream_id | 5 | bslbf |
+| reserved_zero_future_use | 3 | uimsbf |
+| num_t2mi_streams_minus_one | 7 | bslbf |
+| reserved_zero_future_use | 1 | bslbf |
+| pcr_iscr_common_clock_flag | 8 | bslbf |
+| for (i=0;i<N;i++) { |  |  |
+| reserved_zero_future_use |  |  |
+| } |  |  |
+| } |  |  |
+
+### Table 159 — URI linkage descriptor
+_PDF pages 146-146 (§6.4.16.1)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| URI_linkage_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 8 | uimsbf |
+| uri_linkage_type | 8 | uimsbf |
+| uri_length | 8 | bslbf |
+| for (i=0;i<N;i++) { | 16 | uimsbf |
+| uri_char | 8 | bslbf |
+| } |  |  |
+| if ((uri_linkage_type == 0x00) |  |  |
+| \|\| (uri_linkage_type == 0x01)) { |  |  |
+| min_polling_interval |  |  |
+| } |  |  |
+| for (i=0;i<N;i++) { |  |  |
+| private_data_byte |  |  |
+| } |  |  |
+| } |  |  |
+
+### Table 160 — Video depth range descriptor
+_PDF pages 147-147 (§6.4.16.1)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| video_depth_range_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 8 | uimsbf |
+| for (i=0;i<N;i++) { | 8 | uimsbf |
+| range_type | 8 | bslbf |
+| range_length |  |  |
+| if (range_type == 0x0) { |  |  |
+| production_disparity_hint_info() |  |  |
+| } else if (range_type == 0x1) { |  |  |
+| /* empty */ |  |  |
+| } else { |  |  |
+| for (j=0;j<N;j++) { |  |  |
+| range_selector_byte |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+
+### Table 161 — Range type coding
+_PDF pages 147-147 (§6.4.16.1)_
+
+| range_type | Description |
+|---|---|
+| 0x00 | production disparity hint |
+| 0x01 | multi-region disparity Supplemental Enhancement Information (SEI) present |
+| 0x02 to 0xFF | reserved for future use |
+
+### Table 162 — Production disparity hint info
+_PDF pages 148-148 (§6.4.17)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| production_disparity_hint_info() { | 12 | tcimsbf |
+| video_max_disparity_hint | 12 | tcimsbf |
+| video_min_disparity_hint |  |  |
+| } |  |  |
+
+### Table 162a — VVC subpictures descriptor
+_PDF pages 149-149 (§6.4.17)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| vvc_subpictures_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 1 | bslbf |
+| default_service_mode | 1 | bslbf |
+| service_description_present | 6 | uimsbf |
+| number_of_vvc_subpictures | 8 | uimsbf |
+| for (i=0;i<N;i++) { | 8 | uimsbf |
+| component_tag | 5 | bslbf |
+| vvc_subpicture_id | 3 | bslbf |
+| } | 8 | uimsbf |
+| reserved_zero_future_use | 8 | bslbf |
+| processing_mode |  |  |
+| if (service_description_present == 0b1) { |  |  |
+| service_description_length |  |  |
+| for (j=0;j<N;j++) { |  |  |
+| char |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+
+### Table 162b — Processing mode coding
+_PDF pages 149-149 (§6.4.17)_
+
+| processing_mode | Description |
+|---|---|
+| 0b000 | processing mode undefined |
+| 0b001 | no bitstream processing necessary |
+| 0b010 | merging of VVC subpictures into one bitstream necessary |
+| 0b011 | reserved for future use |
+| 0b100 | extraction of VVC subpictures from a bitstream necessary |
+| 0b101 | reserved for future use |
+| 0b110 | extraction and merging (replacement) of VVC subpictures necessary |
+| 0b111 | reserved for future use |
+
+### Table 162c — service_prominence_descriptor
+_PDF pages 150-150 (§6.4.18)_
+
+| Syntax | Number of bits | Identifier |
+|---|---|---|
+| service_prominence_descriptor() { | 8 | uimsbf |
+| descriptor_tag | 8 | uimsbf |
+| descriptor_length | 8 | uimsbf |
+| descriptor_tag_extension | 8 | uimsbf |
+| SOGI_list_length | 1 | bslbf |
+| if (SOGI_list_length > 0) { | 1 | bslbf |
+| for (i=0;i<N;i++) { | 1 | bslbf |
+| SOGI_flag | 1 | bslbf |
+| target_region_flag | 12 | uimsbf |
+| service_flag | 16 | uimsbf |
+| reserved_future_use | 8 | uimsbf |
+| SOGI_priority | 5 | bslbf |
+| if (service_flag == 0b1) { | 1 | bslbf |
+| service_id | 2 | uimsbf |
+| } | 24 | bslbf |
+| if (target_region_flag == 0b1) { | 8 | uimsbf |
+| target_region_loop_length | 8 | uimsbf |
+| for (j=0;j<N;j++) { | 16 | uimsbf |
+| reserved_future_use | 8 | bslbf |
+| country_code_flag |  |  |
+| region_depth |  |  |
+| if (country_code_flag == 0b1) { |  |  |
+| country_code |  |  |
+| } |  |  |
+| if (region_depth >= 1) { |  |  |
+| primary_region_code |  |  |
+| if (region_depth >= 2) { |  |  |
+| secondary_region_code |  |  |
+| if (region_depth == 3) { |  |  |
+| tertiary_region_code |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+| } |  |  |
+| for (i=0; i<N; i++) { |  |  |
+| private_data_byte |  |  |
+| } |  |  |
+| } |  |  |
+
+---
+_Rendered from ETSI EN 300 468 v1.19.1 §6.4, PDF pages 4-4. 63 tables / 336 rows reproduced verbatim._
