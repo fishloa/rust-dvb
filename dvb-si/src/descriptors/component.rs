@@ -17,6 +17,7 @@ const STREAM_CONTENT_MASK: u8 = 0x0F;
 
 /// Component Descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ComponentDescriptor<'a> {
     /// 4-bit stream_content (ETSI Table 26: 0x01 video, 0x02 audio, 0x03 teletext, …).
     pub stream_content: u8,
@@ -27,6 +28,7 @@ pub struct ComponentDescriptor<'a> {
     /// ISO 639-2 language code.
     pub language_code: [u8; 3],
     /// Raw DVB-encoded text label for this component.
+    #[cfg_attr(feature = "serde", serde(borrow))]
     pub text: &'a [u8],
 }
 

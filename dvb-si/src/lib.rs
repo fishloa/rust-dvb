@@ -9,7 +9,7 @@
 //! - [`table_id::TableId`] — typed table_id enum.
 //! - [`descriptor_tag::DescriptorTag`] — typed descriptor_tag enum.
 //!
-//! See the crate README and `docs/dvb_si/` for the structured spec reference.
+//! See the crate README and `docs/` for the structured spec reference.
 
 #![warn(missing_docs)]
 

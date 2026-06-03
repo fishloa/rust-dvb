@@ -14,6 +14,7 @@ const BODY_LEN: u8 = 11;
 
 /// Polarization (\u00a76.2.13.2 Table 43).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Polarization {
     /// Linear horizontal.
     LinearHorizontal,
@@ -27,6 +28,7 @@ pub enum Polarization {
 
 /// Modulation system (DVB-S or DVB-S2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ModulationSystem {
     /// DVB-S (first generation).
     DvbS,
@@ -36,6 +38,7 @@ pub enum ModulationSystem {
 
 /// Modulation type (\u00a76.2.13.2 Table 44).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ModulationType {
     /// Auto-detect.
     Auto,
@@ -49,6 +52,7 @@ pub enum ModulationType {
 
 /// Roll-off factor (DVB-S2 only).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum RollOff {
     /// 0.35 (DVB-S default).
     Alpha035,
@@ -62,6 +66,7 @@ pub enum RollOff {
 
 /// Satellite Delivery System Descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SatelliteDeliverySystemDescriptor {
     /// 32-bit BCD frequency in GHz (e.g. 11_725_000 kHz \u2192 0x11725000 = 11.72500 GHz).
     pub frequency_bcd: u32,

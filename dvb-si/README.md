@@ -32,8 +32,8 @@ implementation and is round-trip tested.
   0x43 satellite_delivery_system, 0x44 cable_delivery_system, 0x48 service,
   0x4A linkage, 0x4D short_event, 0x4E extended_event, 0x50 component,
   0x54 content, 0x55 parental_rating, 0x58 local_time_offset, 0x59 subtitling,
-  0x5A terrestrial_delivery_system, 0x66 data_stream_alignment, 0x6F default_authority,
-  0x73 content_identifier, 0x79 S2_satellite_delivery_system, 0x6A AC-3,
+  0x5A terrestrial_delivery_system, 0x06 data_stream_alignment, 0x73 default_authority,
+  0x76 content_identifier, 0x79 S2_satellite_delivery_system, 0x6A AC-3,
   0x7A Enhanced AC-3, plus bouquet_name, logical_channel, private_data_indicator,
   registration, stream_identifier, teletext, frequency_list.
 

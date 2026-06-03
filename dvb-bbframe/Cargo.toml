@@ -16,3 +16,7 @@ exclude      = ["docs/**"]
 dvb-common = { path = "../dvb-common", version = "0.1" }
 thiserror  = "2"
 num_enum   = "0.7"
+serde      = { version = "1", optional = true, features = ["derive"] }
+
+[features]
+serde = ["dep:serde"]

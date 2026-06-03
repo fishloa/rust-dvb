@@ -43,6 +43,7 @@ const SCRAMBLING_INDEX_MAX: u32 = 0x3FFFF;
 
 /// S2 Satellite Delivery System Descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct S2SatelliteDeliverySystemDescriptor {
     /// When set, `scrambling_sequence_index` is present.
     pub scrambling_sequence_selector: bool,

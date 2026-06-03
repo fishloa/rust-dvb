@@ -11,6 +11,7 @@ use dvb_common::{Parse, Serialize};
 
 /// Function tags per §5.2.8.2 Table 5.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 pub enum AddressingFunctionTag {
     /// Transmitter time offset.
@@ -72,10 +73,12 @@ impl fmt::Display for AddressingFunctionTag {
 
 /// A single function entry within individual addressing.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FunctionEntry<'a> {
     /// Function tag identifying the entry type.
     pub tag: AddressingFunctionTag,
     /// Raw function body (including tag + length bytes).
+    #[cfg_attr(feature = "serde", serde(borrow))]
     pub raw: &'a [u8],
 }
 
@@ -86,12 +89,14 @@ pub struct FunctionEntry<'a> {
 /// - byte 2: ind_addr_data_length (8 bits) — length of function loop in bytes
 /// - bytes 3..: function loop entries
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IndividualAddressingPayload<'a> {
     /// Transmitter identifier (0x0000 = broadcast).
     pub tx_identifier: u16,
     /// Length of the function loop in bytes.
     pub ind_addr_data_length: u8,
     /// Raw function loop data.
+    #[cfg_attr(feature = "serde", serde(borrow))]
     pub ind_addr_data: &'a [u8],
 }
 

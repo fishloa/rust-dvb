@@ -7,6 +7,7 @@ use dvb_common::{Parse, Serialize};
 /// Layout: frame_idx(8) + rfu(2) + num_active_bias_cells_per_p2(15) = 25 bits.
 /// Stored in 3 bytes with 7 bits of RFU padding added.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct P2BiasPayload {
     /// FRAME_IDX of T2 frame.
     pub frame_idx: u8,

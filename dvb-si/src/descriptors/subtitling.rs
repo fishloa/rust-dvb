@@ -15,6 +15,7 @@ const ENTRY_LEN: usize = 8;
 
 /// One subtitling component.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SubtitlingEntry {
     /// ISO 639-2 language code.
     pub language_code: [u8; 3],
@@ -29,6 +30,7 @@ pub struct SubtitlingEntry {
 
 /// Subtitling Descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SubtitlingDescriptor {
     /// Entries in wire order.
     pub entries: Vec<SubtitlingEntry>,

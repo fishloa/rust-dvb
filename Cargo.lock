@@ -94,6 +94,7 @@ version = "0.1.0"
 dependencies = [
  "dvb-common",
  "num_enum",
+ "serde",
  "thiserror",
 ]
 
@@ -125,6 +126,7 @@ dependencies = [
  "bytes",
  "dvb-common",
  "num_enum",
+ "serde",
  "thiserror",
 ]
 

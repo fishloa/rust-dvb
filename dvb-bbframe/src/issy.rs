@@ -5,6 +5,7 @@
 
 /// Decoded ISSY value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Issy {
     /// Reserved code (0xE0xxxx-0xFFxxxx) — not transmitted in DVB-T2.
     Reserved,

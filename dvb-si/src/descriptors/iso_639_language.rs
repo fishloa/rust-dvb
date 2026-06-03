@@ -11,6 +11,7 @@ const ENTRY_LEN: usize = 4;
 
 /// One (language code, audio type) pair.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LanguageEntry {
     /// Three-character ISO 639-2 language code (e.g. b"eng", b"fra").
     pub language_code: [u8; 3],
@@ -21,6 +22,7 @@ pub struct LanguageEntry {
 
 /// ISO 639 Language Descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Iso639LanguageDescriptor {
     /// One or more language entries.
     pub entries: Vec<LanguageEntry>,

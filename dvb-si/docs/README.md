@@ -8,6 +8,6 @@ are the authoritative source. Excluded from the published crate.
 | Document | Standard | Covers |
 |---|---|---|
 | [en_300_468.md](en_300_468.md) | EN 300 468 v1.19.1 — DVB SI | all SI/PSI tables + descriptors, incl. SAT (0x4D) |
-| [ts_102_006_ssu.md](ts_102_006_ssu.md) | TS 102 006 v1.4.1 — System Software Update | UNT (0x4B) |
+| [ts_102_006_ssu.md](ts_102_006_ssu.md) | TS 102 006 v1.7.1 — System Software Update | UNT (0x4B) |
 | [en_301_192.md](en_301_192.md) | EN 301 192 v1.7.1 — Data Broadcasting | INT (0x4C) |
 | [ts_102_323_tva.md](ts_102_323_tva.md) | TS 102 323 v1.4.1 — TV-Anytime | RCT (0x76), CIT (0x77), RNT (0x79) |
