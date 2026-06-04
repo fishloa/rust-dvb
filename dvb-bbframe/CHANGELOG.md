@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-06-04
+
 ### Fixed
 
 - Removed the fictitious "HEM CRC-8 init = 0xB5" model (`CRC8_INIT_DVB_T2`,
@@ -17,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   construction — the XOR already constrains the byte) was removed. The only
   integrity signal the spec's scheme supports is `InvalidMode`.
 
-## [0.1.0]
+## [0.1.0] — internal
 
 Initial release. DVB-S2 / S2X / T2 Base-Band Frame (BBFRAME) header parser and
 builder, Normal Mode (NM) and High Efficiency Mode (HEM).
