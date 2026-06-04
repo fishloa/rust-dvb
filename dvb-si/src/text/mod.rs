@@ -1,10 +1,13 @@
 //! DVB-SI text decoding — ETSI EN 300 468 Annex A.
 //!
-//! Covers the common charsets: the default Latin table (Figure A.1, an ISO 6937
-//! superset — see `iso_6937_single`), ISO 8859-n, UTF-8 (selector 0x15) and
-//! UCS-2 BE (selector 0x11). Remaining Annex A coverage (Cyrillic/Arabic/Greek/
-//! Hebrew figures via selectors already routed to ISO 8859-n, CJK selectors
-//! 0x12–0x14, emphasis pairs) is future work.
+//! Covers the full Annex A Table A.3 selector set: the default Latin table
+//! (Figure A.1, an ISO 6937 superset — see `iso_6937_single`), ISO 8859-n
+//! (single-byte 0x01–0x0B and extended 0x10 forms), UCS-2 BE (0x11),
+//! KS X 1001 Korean (0x12, decoded as EUC-KR), GB-2312 Simplified Chinese
+//! (0x13, decoded via GBK which is a GB-2312 superset), Big5 Traditional
+//! Chinese (0x14), UTF-8 (0x15), and the 0x1F `encoding_type_id` escape
+//! (no ids are registered for broadcast use — yields U+FFFD). Reserved
+//! selectors (0x08, 0x0C–0x0F, 0x16–0x1E) yield U+FFFD per byte.
 //!
 //! Glyph mappings are pinned to EN 300 468 V1.19.1 (2025-02) Figure A.1
 //! "Character code table 00 - Latin alphabet with Unicode equivalents"
@@ -28,20 +31,27 @@ pub fn decode_dvb_string(bytes: &[u8]) -> String {
         Charset::Iso8859(n) => decode_iso_8859(n, body),
         Charset::Utf8 => String::from_utf8_lossy(body).into_owned(),
         Charset::Ucs2Be => decode_ucs2_be(body),
+        Charset::Ksx1001 => decode_with(encoding_rs::EUC_KR, body),
+        Charset::Gb2312 => decode_with(encoding_rs::GBK, body),
+        Charset::Big5 => decode_with(encoding_rs::BIG5, body),
         Charset::Unsupported(_indicator) => body.iter().map(|_| '\u{FFFD}').collect(),
     };
 
-    // Annex A.2 control codes:
-    //   0x86 emphasis on, 0x87 emphasis off, 0x8A CR/LF -> space.
-    //   Other C0/C1 controls are stripped.
+    // Annex A.1 control codes:
+    //   single-byte tables: 0x86 emphasis on, 0x87 emphasis off, 0x8A CR/LF
+    //   -> space; other C0/C1 controls are stripped.
+    //   two-byte tables (Table A.2): the same functions live at U+E086 /
+    //   U+E087 / U+E08A inside the ISO 10646 PUA; the rest of
+    //   U+E080..U+E09F is reserved for control functions and stripped.
     decoded
         .chars()
         .filter_map(|c| match c as u32 {
-            0x86 | 0x87 => None,
-            0x8A => Some(' '),
+            0x86 | 0x87 | 0xE086 | 0xE087 => None,
+            0x8A | 0xE08A => Some(' '),
             0x0A => Some(' '),
             code if code < 0x20 => None,
             code if (0x80..0xA0).contains(&code) => None,
+            code if (0xE080..0xE0A0).contains(&code) => None,
             _ => Some(c),
         })
         .collect()
@@ -63,6 +73,12 @@ enum Charset {
     Iso8859(u8),
     Utf8,
     Ucs2Be,
+    /// KS X 1001 (selector 0x12), decoded as EUC-KR.
+    Ksx1001,
+    /// GB-2312 (selector 0x13), decoded via GBK (a GB-2312 superset).
+    Gb2312,
+    /// Big5 (selector 0x14).
+    Big5,
     Unsupported(u8),
 }
 
@@ -78,7 +94,13 @@ fn split_charset(bytes: &[u8]) -> (Charset, &[u8]) {
             (Charset::Iso8859(bytes[2]), &bytes[3..])
         }
         0x11 => (Charset::Ucs2Be, &bytes[1..]),
+        0x12 => (Charset::Ksx1001, &bytes[1..]),
+        0x13 => (Charset::Gb2312, &bytes[1..]),
+        0x14 => (Charset::Big5, &bytes[1..]),
         0x15 => (Charset::Utf8, &bytes[1..]),
+        // 0x1F: an 8-bit encoding_type_id follows (Table A.4 area); no ids are
+        // registered for broadcast text — treat the body as undecodable.
+        0x1F if bytes.len() >= 2 => (Charset::Unsupported(0x1F), &bytes[2..]),
         other => (Charset::Unsupported(other), &bytes[1..]),
     }
 }
@@ -320,6 +342,11 @@ fn decode_iso_8859(n: u8, bytes: &[u8]) -> String {
     cow.into_owned()
 }
 
+fn decode_with(encoding: &'static encoding_rs::Encoding, bytes: &[u8]) -> String {
+    let (cow, _, _) = encoding.decode(bytes);
+    cow.into_owned()
+}
+
 fn decode_ucs2_be(bytes: &[u8]) -> String {
     let code_units: Vec<u16> = bytes
         .chunks_exact(2)
@@ -397,6 +424,50 @@ mod tests {
         assert_eq!(s, "A B");
     }
 
+    #[test]
+    fn decode_selector_0x12_ksx1001_euc_kr() {
+        // EUC-KR 0xB0A1 = '가' (HANGUL SYLLABLE GA).
+        assert_eq!(decode_dvb_string(&[0x12, 0xB0, 0xA1]), "가");
+    }
+
+    #[test]
+    fn decode_selector_0x13_gb2312() {
+        // GB-2312/GBK 0xC4E3 = '你'.
+        assert_eq!(decode_dvb_string(&[0x13, 0xC4, 0xE3]), "你");
+    }
+
+    #[test]
+    fn decode_selector_0x14_big5() {
+        // Big5 0xA4A4 = '中'.
+        assert_eq!(decode_dvb_string(&[0x14, 0xA4, 0xA4]), "中");
+    }
+
+    /// A multi-byte trail byte in 0x80–0x9F must survive: the C1 control
+    /// filter operates on decoded code points, never on raw trail bytes.
+    /// GBK 0x8180 = '亐' (U+4E90, trail byte in the C1 range).
+    #[test]
+    fn decode_selector_0x13_gbk_trail_byte_in_c1_range() {
+        assert_eq!(decode_dvb_string(&[0x13, 0x81, 0x80]), "亐");
+    }
+
+    /// Annex A.1 two-byte control codes live at U+E080–U+E09F in the PUA
+    /// (Table A.2): U+E08A is CR/LF → space; the reserved rest is stripped.
+    /// GBK 0xABCD decodes to U+E08A; GBK 0xABC3 decodes to U+E080.
+    #[test]
+    fn two_byte_control_codes_filtered() {
+        assert_eq!(decode_dvb_string(&[0x13, 0xAB, 0xCD]), " ");
+        assert_eq!(decode_dvb_string(&[0x13, 0xAB, 0xC3]), "");
+    }
+
+    /// 0x1F consumes its 8-bit encoding_type_id; the body is undecodable
+    /// (no registered broadcast ids) and yields U+FFFD per byte.
+    #[test]
+    fn decode_selector_0x1f_encoding_type_id() {
+        let s = decode_dvb_string(&[0x1F, 0x01, 0x41, 0x42]);
+        assert_eq!(s.chars().count(), 2);
+        assert!(s.chars().all(|c| c == '\u{FFFD}'));
+    }
+
     /// Table A.3 marks single-byte selector 0x08 reserved (no ISO 8859-12).
     #[test]
     fn reserved_selector_0x08_is_unsupported() {
@@ -407,8 +478,8 @@ mod tests {
 
     #[test]
     fn unknown_selector_returns_replacement_characters() {
-        // Selector 0x1F is reserved/unsupported — each byte becomes U+FFFD.
-        let s = decode_dvb_string(&[0x1F, 0xAA, 0xBB, 0xCC]);
+        // Selector 0x16 is reserved for future use — each byte becomes U+FFFD.
+        let s = decode_dvb_string(&[0x16, 0xAA, 0xBB, 0xCC]);
         assert_eq!(s.chars().count(), 3);
         assert!(s.chars().all(|c| c == '\u{FFFD}'));
     }
