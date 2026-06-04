@@ -91,7 +91,7 @@ for service in &sdt.services {
 Default: `chrono`, `ts`, `serde`.
 
 ```toml
-dvb-si = { version = "0.1", default-features = false }  # tight build
+dvb-si = { version = "1.0", default-features = false }  # tight build
 ```
 
 ## Authoritative reference

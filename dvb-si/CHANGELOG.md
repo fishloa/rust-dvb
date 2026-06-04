@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — unreleased
+## 1.0.0 — 2026-06-04
 
 First substantive release covering the MPEG-2 PSI and DVB SI table set, the
 common descriptors, and the DVB-allocated companion tables.
