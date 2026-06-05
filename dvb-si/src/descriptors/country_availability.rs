@@ -7,6 +7,7 @@
 //! countries EXCEPT those listed.
 
 use crate::error::{Error, Result};
+use crate::text::LangCode;
 use crate::traits::Descriptor;
 use dvb_common::{Parse, Serialize};
 
@@ -31,7 +32,7 @@ pub struct CountryAvailabilityDescriptor {
     /// EXCEPT the listed countries.
     pub country_availability_flag: bool,
     /// ISO 3166 alpha-3 country codes in wire order.
-    pub country_codes: Vec<[u8; 3]>,
+    pub country_codes: Vec<LangCode>,
 }
 
 impl<'a> Parse<'a> for CountryAvailabilityDescriptor {
@@ -77,7 +78,7 @@ impl<'a> Parse<'a> for CountryAvailabilityDescriptor {
         let loop_body = &bytes[HEADER_LEN + FLAG_LEN..end];
         let mut country_codes = Vec::with_capacity(loop_body.len() / COUNTRY_CODE_LEN);
         for chunk in loop_body.chunks_exact(COUNTRY_CODE_LEN) {
-            country_codes.push([chunk[0], chunk[1], chunk[2]]);
+            country_codes.push(LangCode([chunk[0], chunk[1], chunk[2]]));
         }
         Ok(Self {
             country_availability_flag,
@@ -119,7 +120,7 @@ impl Serialize for CountryAvailabilityDescriptor {
         buf[HEADER_LEN] = flag_bit | RESERVED_MASK;
         let mut pos = HEADER_LEN + FLAG_LEN;
         for code in &self.country_codes {
-            buf[pos..pos + COUNTRY_CODE_LEN].copy_from_slice(code);
+            buf[pos..pos + COUNTRY_CODE_LEN].copy_from_slice(&code.0);
             pos += COUNTRY_CODE_LEN;
         }
         Ok(len)
@@ -143,7 +144,7 @@ mod tests {
         let bytes = [TAG, 7, 0xFF, b'G', b'B', b'R', b'F', b'R', b'A'];
         let d = CountryAvailabilityDescriptor::parse(&bytes).unwrap();
         assert!(d.country_availability_flag);
-        assert_eq!(d.country_codes, vec![*b"GBR", *b"FRA"]);
+        assert_eq!(d.country_codes, vec![LangCode(*b"GBR"), LangCode(*b"FRA")]);
     }
 
     #[test]
@@ -151,7 +152,7 @@ mod tests {
         let bytes = [TAG, 4, 0x7F, b'D', b'E', b'U'];
         let d = CountryAvailabilityDescriptor::parse(&bytes).unwrap();
         assert!(!d.country_availability_flag);
-        assert_eq!(d.country_codes, vec![*b"DEU"]);
+        assert_eq!(d.country_codes, vec![LangCode(*b"DEU")]);
     }
 
     #[test]
@@ -203,7 +204,7 @@ mod tests {
     fn serialize_round_trip() {
         let d = CountryAvailabilityDescriptor {
             country_availability_flag: true,
-            country_codes: vec![*b"GBR", *b"IRL"],
+            country_codes: vec![LangCode(*b"GBR"), LangCode(*b"IRL")],
         };
         let mut buf = vec![0u8; d.serialized_len()];
         d.serialize_into(&mut buf).unwrap();
@@ -227,7 +228,7 @@ mod tests {
     fn serde_round_trip() {
         let d = CountryAvailabilityDescriptor {
             country_availability_flag: true,
-            country_codes: vec![*b"FRA"],
+            country_codes: vec![LangCode(*b"FRA")],
         };
         let json = serde_json::to_string(&d).unwrap();
         let back: CountryAvailabilityDescriptor = serde_json::from_str(&json).unwrap();
