@@ -161,7 +161,7 @@ impl SectionEvent {
 }
 
 /// Section statistics, monotonically accumulated across `feed` calls.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Stats {
     /// TS packets fed (every `feed` call increments this).
     pub packets: u64,
@@ -171,8 +171,9 @@ pub struct Stats {
     pub emitted: u64,
     /// Sections suppressed by the version gate (unchanged repeats).
     pub suppressed: u64,
-    /// CRC-bearing sections dropped for CRC mismatch (or that were too short
-    /// to carry the bytes their header declared).
+    /// Structurally invalid (sub-3-byte; cannot occur from the in-crate
+    /// reassembler) and CRC-failed sections share this counter. Sections are
+    /// dropped before emission; the gate is never updated for them.
     pub crc_failures: u64,
     /// TS packets that failed to parse (bad sync byte, too short).
     pub malformed_packets: u64,
@@ -267,7 +268,7 @@ impl SiDemuxBuilder {
         let mut pids: HashMap<Pid, SectionReassembler> = HashMap::new();
         if self.dvb_si_pids {
             use crate::pid::well_known as wk;
-            for raw in [
+            for pid in [
                 wk::PAT,
                 wk::CAT,
                 wk::NIT,
@@ -277,7 +278,7 @@ impl SiDemuxBuilder {
                 wk::TDT_TOT,
                 wk::SAT,
             ] {
-                pids.entry(Pid::new(raw)).or_default();
+                pids.entry(pid).or_default();
             }
         }
         for p in self.extra_pids {
@@ -303,6 +304,9 @@ impl SiDemuxBuilder {
 /// See the [module docs](crate::demux) for the gate and CRC policies.
 pub struct SiDemux {
     pids: HashMap<Pid, SectionReassembler>,
+    // TODO(perf): keys are uniform internal u64s — a non-SipHash hasher (e.g.
+    // FxHash) would shave cycles at high section rates; revisit if profiling
+    // shows it.
     gate: HashMap<u64, GateEntry>,
     gate_order: VecDeque<u64>,
     cfg: Config,
@@ -336,17 +340,18 @@ impl SiDemux {
                 let pid = Pid::new(ts.header.pid);
                 // Cheap miss: one map lookup for non-watched PIDs.
                 if self.pids.contains_key(&pid) {
-                    // Drain into a local buffer so we can release the borrow on
-                    // `self.pids` before calling `consider` (which may insert
-                    // new PMT PIDs into the same map).
                     let payload = ts.payload.unwrap_or(&[]);
-                    let reasm = self.pids.get_mut(&pid).expect("checked above");
-                    reasm.feed(payload, ts.header.pusi);
-                    let mut completed: Vec<Bytes> = Vec::new();
-                    while let Some(section) = reasm.pop_section() {
-                        completed.push(section);
-                    }
-                    for section in completed {
+                    // Feed the reassembler; the borrow is released before
+                    // `consider` (which may insert new PMT PIDs into the map).
+                    self.pids
+                        .get_mut(&pid)
+                        .expect("checked above")
+                        .feed(payload, ts.header.pusi);
+                    while let Some(section) = self
+                        .pids
+                        .get_mut(&pid)
+                        .and_then(SectionReassembler::pop_section)
+                    {
                         self.stats.sections_completed += 1;
                         self.consider(pid, section);
                     }

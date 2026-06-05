@@ -55,43 +55,49 @@ impl core::fmt::Display for Pid {
 
 /// Well-known PIDs. The transport stream MUST carry the corresponding tables
 /// on these PIDs.
+///
+/// **API 2.0 type change:** constants are now [`crate::pid::Pid`] instead of `u16`.
+/// Call `.value()` to obtain the raw `u16`, or use `Pid::from(u16)` /
+/// `u16::from(Pid)` for conversions.
 pub mod well_known {
+    use super::Pid;
+
     /// Program Association Table (MPEG-2).
-    pub const PAT: u16 = 0x0000;
+    pub const PAT: Pid = Pid::new(0x0000);
     /// Conditional Access Table (MPEG-2).
-    pub const CAT: u16 = 0x0001;
+    pub const CAT: Pid = Pid::new(0x0001);
     /// Transport Stream Description Table (MPEG-2).
-    pub const TSDT: u16 = 0x0002;
+    pub const TSDT: Pid = Pid::new(0x0002);
     /// IPMP Control Information Table (MPEG-2).
-    pub const IPMP_CIT: u16 = 0x0003;
+    pub const IPMP_CIT: Pid = Pid::new(0x0003);
     /// Network Information Table (DVB).
-    pub const NIT: u16 = 0x0010;
+    pub const NIT: Pid = Pid::new(0x0010);
     /// Service Description Table + Bouquet Association Table (DVB).
-    pub const SDT_BAT: u16 = 0x0011;
+    pub const SDT_BAT: Pid = Pid::new(0x0011);
     /// Event Information Table (DVB).
-    pub const EIT: u16 = 0x0012;
+    pub const EIT: Pid = Pid::new(0x0012);
     /// Running Status Table (DVB).
-    pub const RST: u16 = 0x0013;
+    pub const RST: Pid = Pid::new(0x0013);
     /// Time and Date + Time Offset + Stuffing (DVB).
-    pub const TDT_TOT: u16 = 0x0014;
+    pub const TDT_TOT: Pid = Pid::new(0x0014);
     /// Network synchronisation.
-    pub const NETWORK_SYNC: u16 = 0x0015;
+    pub const NETWORK_SYNC: Pid = Pid::new(0x0015);
     /// Resolution Notification Table.
-    pub const RNT: u16 = 0x0016;
+    pub const RNT: Pid = Pid::new(0x0016);
     /// Satellite Access Table (EN 300 468 Table 1).
-    pub const SAT: u16 = 0x001B;
+    pub const SAT: Pid = Pid::new(0x001B);
     /// Link-local inband signalling (reserved).
-    pub const INBAND_SIGNALLING: u16 = 0x001C;
+    pub const INBAND_SIGNALLING: Pid = Pid::new(0x001C);
     /// Measurement (reserved).
-    pub const MEASUREMENT: u16 = 0x001D;
+    pub const MEASUREMENT: Pid = Pid::new(0x001D);
     /// Discontinuity Information Table.
-    pub const DIT: u16 = 0x001E;
+    pub const DIT: Pid = Pid::new(0x001E);
     /// Selection Information Table.
-    pub const SIT: u16 = 0x001F;
+    pub const SIT: Pid = Pid::new(0x001F);
 
     /// ATSC PSIP base PID.
-    pub const ATSC_PSIP: u16 = 0x1FFB;
+    pub const ATSC_PSIP: Pid = Pid::new(0x1FFB);
 
     /// Null-packet padding PID. Payload is ignored.
-    pub const NULL: u16 = 0x1FFF;
+    pub const NULL: Pid = Pid::new(0x1FFF);
 }

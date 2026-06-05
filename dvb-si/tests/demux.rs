@@ -2,7 +2,7 @@
 //! exercised through the public crate surface (no `super::` internals).
 #![cfg(feature = "ts")]
 
-use dvb_si::demux::SiDemux;
+use dvb_si::demux::{SiDemux, Stats};
 use dvb_si::pid::Pid;
 use dvb_si::tables::AnyTable;
 use dvb_si::ts::{TsHeader, TS_PACKET_SIZE};
@@ -90,10 +90,19 @@ fn scenario1_pat_version_gate() {
     assert_eq!(demux.feed(&v0).count(), 0);
     assert_eq!(demux.feed(&v1).count(), 1);
 
-    let s = demux.stats();
-    assert_eq!(s.sections_completed, 3);
-    assert_eq!(s.emitted, 2);
-    assert_eq!(s.suppressed, 1);
+    // Exhaustive pin of all seven Stats fields.
+    assert_eq!(
+        demux.stats(),
+        Stats {
+            packets: 3,
+            sections_completed: 3,
+            emitted: 2,
+            suppressed: 1,
+            crc_failures: 0,
+            malformed_packets: 0,
+            gate_evictions: 0,
+        }
+    );
 }
 
 #[test]
