@@ -34,6 +34,9 @@ pub mod payload;
 pub mod traits;
 
 #[cfg(feature = "ts")]
+pub mod pump;
+
+#[cfg(feature = "ts")]
 pub mod ts;
 
 pub use error::{Error, Result};
