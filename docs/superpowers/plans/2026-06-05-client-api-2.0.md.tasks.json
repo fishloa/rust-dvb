@@ -71,7 +71,7 @@
     {
       "id": 9,
       "subject": "Task 9: T2miPump + T2miEvent",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         8
       ],
@@ -106,5 +106,5 @@
       "description": "**Goal:** Lockstep 2.0.0, PR Closes #16, tag v2.0.0 -> CI publish, GitHub Release notes (no artifacts), verify crates.io + docs.rs.\n\n```json:metadata\n{\"files\": [\"dvb-si/Cargo.toml\", \"docs/release-notes/v2.0.0.md\"], \"verifyCommand\": \"cargo fmt --all --check && cargo test --workspace --all-features --locked\", \"acceptanceCriteria\": [\"gates green\", \"published x4\", \"release notes live\"]}\n```"
     }
   ],
-  "lastUpdated": "2026-06-05T17:00:00Z"
+  "lastUpdated": "2026-06-05T17:50:00Z"
 }
