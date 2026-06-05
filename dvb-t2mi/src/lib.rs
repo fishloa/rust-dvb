@@ -31,6 +31,7 @@ pub mod crc;
 pub mod error;
 pub mod packet;
 pub mod payload;
+pub mod traits;
 
 #[cfg(feature = "ts")]
 pub mod ts;
