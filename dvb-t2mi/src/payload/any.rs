@@ -86,8 +86,6 @@ macro_rules! declare_payloads {
             /// Returns `None` when `packet_type` has no typed implementation
             /// (the caller turns that into [`AnyPayload::Unknown`]).
             /// Returns `Some(Err)` on a typed parse failure for a recognised type.
-            /// Parse one payload by its `packet_type`, returning `None` for
-            /// unrecognised types.
             ///
             /// See the [module-level documentation][self] for the dispatch
             /// contract (payload-only bytes, header and CRC excluded).
@@ -153,7 +151,9 @@ mod tests {
     /// Every entry in DISPATCHED_TYPES must dispatch to a non-Unknown variant.
     #[test]
     fn every_dispatched_type_routes_non_unknown() {
-        // Minimal valid payload bytes for each packet type (all RFU = 0).
+        // Minimal valid payload bytes for each packet type (all RFU = 0 — the
+        // parsers reject non-zero reserved bits). See each payload module's
+        // own tests for full boundary coverage.
 
         // 0x00 BBFrame: frame_idx(1) + plp_id(1) + intl_frame_start+rfu(1) = 3 bytes.
         let bbframe_bytes: &[u8] = &[0x00, 0x00, 0x00];
@@ -169,7 +169,9 @@ mod tests {
         // 0x12 P2Bias: 5 bytes, all rfu = 0.
         let p2_bias_bytes: &[u8] = &[0x00, 0x00, 0x00, 0x00, 0x00];
         // 0x20 Timestamp: 11 bytes, rfu top 4 bits of byte0 = 0, bw=0 (1.7 MHz).
-        let timestamp_bytes: &[u8] = &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let timestamp_bytes: &[u8] = &[
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
         // 0x21 IndividualAddressing: rfu(1) + length(1, value 0) = 2 bytes.
         let indiv_addr_bytes: &[u8] = &[0x00, 0x00];
         // 0x30 FefNull: fef_idx(1) + rfu(1, must be 0) + s1_field+s2_field(1) = 3 bytes.
@@ -181,7 +183,10 @@ mod tests {
         // 0x33 FefSubpart: 15 bytes.
         // bytes 3-6 = rfu1 = 0, byte 11 = rfu2 = 0, byte 12 top 2 = 0.
         // subpart_variety bytes 9-10 = 0x0000 = Null.
-        let fef_subpart_bytes: &[u8] = &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let fef_subpart_bytes: &[u8] = &[
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00,
+        ];
 
         let fixtures: &[(u8, &[u8])] = &[
             (0x00, bbframe_bytes),
@@ -202,7 +207,11 @@ mod tests {
             let result = AnyPayload::dispatch(pt, bytes);
             assert!(result.is_some(), "0x{pt:02x} returned None from dispatch");
             let parsed = result.unwrap();
-            assert!(parsed.is_ok(), "0x{pt:02x} dispatch parse failed: {:?}", parsed.unwrap_err());
+            assert!(
+                parsed.is_ok(),
+                "0x{pt:02x} dispatch parse failed: {:?}",
+                parsed.unwrap_err()
+            );
             assert!(
                 !matches!(parsed.unwrap(), AnyPayload::Unknown { .. }),
                 "0x{pt:02x} was dispatched to Unknown"
@@ -219,7 +228,9 @@ mod tests {
     /// DISPATCHED_TYPES contains all 12 defined packet_type values.
     #[test]
     fn dispatched_types_contains_all_defined_packet_types() {
-        let expected = [0x00u8, 0x01, 0x02, 0x10, 0x11, 0x12, 0x20, 0x21, 0x30, 0x31, 0x32, 0x33];
+        let expected = [
+            0x00u8, 0x01, 0x02, 0x10, 0x11, 0x12, 0x20, 0x21, 0x30, 0x31, 0x32, 0x33,
+        ];
         for pt in expected {
             assert!(
                 AnyPayload::DISPATCHED_TYPES.contains(&pt),
@@ -279,16 +290,25 @@ mod tests {
         };
         let any = AnyPayload::Bbframe(p);
         let json = serde_json::to_value(&any).unwrap();
-        assert!(json.get("bbframe").is_some(), "expected camelCase 'bbframe' key, got: {json}");
+        assert!(
+            json.get("bbframe").is_some(),
+            "expected camelCase 'bbframe' key, got: {json}"
+        );
         assert_eq!(json["bbframe"]["frame_idx"], 0x42);
     }
 
     #[cfg(feature = "serde")]
     #[test]
     fn unknown_serializes_with_packet_type_and_body() {
-        let any = AnyPayload::Unknown { packet_type: 0x22, body: &[0xDE, 0xAD] };
+        let any = AnyPayload::Unknown {
+            packet_type: 0x22,
+            body: &[0xDE, 0xAD],
+        };
         let json = serde_json::to_value(&any).unwrap();
-        assert!(json.get("unknown").is_some(), "expected 'unknown' key, got: {json}");
+        assert!(
+            json.get("unknown").is_some(),
+            "expected 'unknown' key, got: {json}"
+        );
         assert_eq!(json["unknown"]["packet_type"], 0x22);
     }
 }
