@@ -305,6 +305,23 @@ Default: `chrono` (MJD+BCD → `DateTime<Utc>`), `ts` (TS packet +
 `serde` is **Serialize-only** — for display/export (JSON via `serde_json`);
 parsing FROM JSON is deliberately unsupported, re-parse from the wire bytes.
 
+Optional (off by default):
+
+`yoke` — `yoke::Yokeable` on every zero-copy view type plus an `Owned<T>`
+wrapper, so you can own a parsed view past the input buffer's borrow (store it
+in a struct field, a cache, a `watch`/broadcast channel, or send it across a
+thread) without re-parsing or a hand-written mirror type:
+
+```rust
+use std::sync::Arc;
+use dvb_si::{owned::Owned, tables::pmt::Pmt};
+use dvb_common::Parse;
+
+let bytes: Arc<[u8]> = Arc::from(section);             // own the section
+let pmt: Owned<Pmt<'static>> = Owned::try_new(bytes, |b| Pmt::parse(b))?;
+let view: &Pmt = pmt.get();                            // no re-parse, no lifetime
+```
+
 ```toml
 dvb-si = { version = "3.0", default-features = false }  # tight build
 ```

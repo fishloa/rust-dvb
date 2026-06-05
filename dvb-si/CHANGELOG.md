@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`yoke` feature (off by default).** `yoke::Yokeable` is derived on every
+  public zero-copy view type — all table views (`Pmt`/`PmtStream`, `Sdt`/
+  `SdtService`, `Eit`/`EitEvent`, `Nit`/`Bat`/`Cat`/`Tsdt`/`Sit`/`Ait`/`Tot`/
+  `Int`/`Unt`/`Rct`/`Rnt`/`Cit`/`Container`, the DSM-CC/MPE/protection/SAT/font
+  sections, …), every borrowing descriptor struct, `DescriptorLoop`, `DvbText`,
+  and the `AnyTable` / `AnyDescriptor` enums. A new `owned` module adds
+  `Owned<Y>`, a `'static`, `Send + Sync`, cheaply-`Clone` bundle of the backing
+  `Arc<[u8]>` and the parsed view: own a parsed table past the input buffer's
+  borrow (struct field, cache, `watch`/broadcast channel, cross-thread) without
+  re-parsing or a hand-written mirror type. The feature is optional and adds no
+  dependencies to default builds. (#27)
+
 ## 3.0.1 — 2026-06-05
 
 Supersedes 3.0.0 (use 3.0.1; any `"3.0"` requirement resolves to it). serde is now Serialize-only across the

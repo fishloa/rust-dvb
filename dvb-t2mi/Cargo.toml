@@ -21,6 +21,7 @@ thiserror  = "2"
 num_enum   = "0.7"
 bytes      = { version = "1", optional = true }
 serde      = { version = "1", optional = true, features = ["derive"] }
+yoke       = { version = "0.7", optional = true, features = ["derive"] }
 
 [dev-dependencies]
 serde_json = "1.0"
@@ -31,6 +32,10 @@ dvb-bbframe = { path = "../dvb-bbframe" }
 default = ["ts"]
 ts      = ["dep:bytes"]
 serde   = ["dep:serde"]
+
+# yoke::Yokeable on the zero-copy payload view types (mirrors dvb-si's `yoke`
+# feature) — own a parsed T2-MI payload past the input buffer's borrow.
+yoke    = ["dep:yoke"]
 
 # t2mi_dump: pump a TS/T2-MI stream (feature `ts` for feed_ts).
 [[example]]
