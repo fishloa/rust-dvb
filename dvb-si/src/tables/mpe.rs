@@ -292,7 +292,7 @@ impl<'a> crate::traits::TableDef<'a> for MpeDatagramSection<'a> {
     /// NOT auto-dispatched to this type by the default dispatcher. Use
     /// `AnyTable::parse_as::<MpeDatagramSection>` or
     /// `MpeDatagramSection::parse` to obtain the typed MPE view.
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x3E, 0x3E)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "MPE_DATAGRAM_SECTION";
 }
 

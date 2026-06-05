@@ -290,7 +290,7 @@ impl<'a> Table<'a> for Bat<'a> {
 }
 
 impl<'a> crate::traits::TableDef<'a> for Bat<'a> {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x4A, 0x4A)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "BOUQUET_ASSOCIATION";
 }
 

@@ -368,16 +368,16 @@ fn parse_as_mpe_datagram_for_0x3e() {
     use dvb_si::tables::mpe::MpeDatagramSection;
 
     // Build a minimal valid MPE datagram_section (table_id=0x3E).
-    // header(3) + extension(9) + payload(0) + crc(4)
-    let section_length = (9 + 4) as u16; // extension(9) + crc(4), no payload
+    // header(3) + extension(9) + payload(0) + trailer(4) = 16 bytes.
+    // SSI=0 (private-section framing), private=1, reserved=11.
+    let section_length = 9u16 + 4; // extension(9) + trailer(4), no payload
     let mut v = vec![
         0x3Eu8,
-        // SSI=0 (MPE uses private-section framing): bit7=0, private=1, reserved=11
-        0x70 | ((section_length >> 8) as u8 & 0x0F),
+        0x70 | ((section_length >> 8) as u8 & 0x0F), // SSI=0, private=1, reserved=11
         (section_length & 0xFF) as u8,
         0xAA, // MAC_address_6 (LSB)
         0xBB, // MAC_address_5
-        0x00, // payload_scrambling_control=0, address_scrambling_control=0, llc_snap=0, cni=0, section_number=0
+        0xC1, // reserved=11 | payload_sc=0 | address_sc=0 | llc_snap=0 | cni=1
         0x00, // section_number
         0x00, // last_section_number
         0x11, // MAC_address_4
@@ -385,12 +385,27 @@ fn parse_as_mpe_datagram_for_0x3e() {
         0x33, // MAC_address_2
         0x44, // MAC_address_1 (MSB)
     ];
-    // push placeholder CRC (the module doesn't validate CRC integrity here)
-    v.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+    // Verbatim checksum (SSI=0 path: trailer bytes are preserved as-is).
+    v.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
 
-    let mpe = AnyTable::parse_as::<MpeDatagramSection>(&v);
-    assert!(
-        mpe.is_ok() || mpe.is_err(), // either typed parse or a parse error — never a dispatch miss
-        "parse_as returned unexpected result"
-    );
+    let mpe = AnyTable::parse_as::<MpeDatagramSection>(&v).expect("valid MPE section must parse");
+    // MAC is reassembled network-order: MAC_1..MAC_6
+    assert_eq!(mpe.mac_address, [0x44, 0x33, 0x22, 0x11, 0xBB, 0xAA]);
+    assert!(mpe.payload.is_empty());
+}
+
+/// Every `TableId` variant maps to a byte covered by `AnyTable::DISPATCHED_RANGES`.
+#[test]
+fn every_table_id_variant_is_dispatched() {
+    let ranges = dvb_si::tables::AnyTable::DISPATCHED_RANGES;
+    for b in 0u8..=0xFF {
+        if dvb_si::TableId::try_from(b).is_ok() {
+            let covered = ranges.iter().any(|&(lo, hi)| b >= lo && b <= hi);
+            assert!(
+                covered,
+                "TableId byte {b:#04x} is a known variant but is not covered by \
+                 AnyTable::DISPATCHED_RANGES"
+            );
+        }
+    }
 }

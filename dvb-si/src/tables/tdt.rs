@@ -125,7 +125,7 @@ impl<'a> Table<'a> for Tdt {
 }
 
 impl<'a> crate::traits::TableDef<'a> for Tdt {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x70, 0x70)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "TIME_AND_DATE";
 }
 

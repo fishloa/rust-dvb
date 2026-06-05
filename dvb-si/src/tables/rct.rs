@@ -312,7 +312,7 @@ impl<'a> Table<'a> for Rct<'a> {
 }
 
 impl<'a> crate::traits::TableDef<'a> for Rct<'a> {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x76, 0x76)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "RELATED_CONTENT";
 }
 

@@ -328,7 +328,7 @@ impl<'a> Table<'a> for Unt<'a> {
 }
 
 impl<'a> crate::traits::TableDef<'a> for Unt<'a> {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x4B, 0x4B)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "UPDATE_NOTIFICATION";
 }
 

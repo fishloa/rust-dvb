@@ -126,7 +126,7 @@ impl<'a> Table<'a> for St {
 }
 
 impl<'a> crate::traits::TableDef<'a> for St {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x72, 0x72)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "STUFFING";
 }
 

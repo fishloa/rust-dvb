@@ -116,7 +116,7 @@ impl<'a> Table<'a> for Tot<'a> {
 }
 
 impl<'a> crate::traits::TableDef<'a> for Tot<'a> {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x73, 0x73)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "TIME_OFFSET";
 }
 

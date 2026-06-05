@@ -158,7 +158,7 @@ impl<'a> Table<'a> for Pat {
 }
 
 impl<'a> crate::traits::TableDef<'a> for Pat {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x00, 0x00)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "PROGRAM_ASSOCIATION";
 }
 

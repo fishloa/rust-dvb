@@ -253,7 +253,7 @@ impl<'a> Table<'a> for Ait<'a> {
 }
 
 impl<'a> crate::traits::TableDef<'a> for Ait<'a> {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x74, 0x74)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "APPLICATION_INFORMATION";
 }
 

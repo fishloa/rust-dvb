@@ -224,7 +224,10 @@ impl<'a> Table<'a> for Sdt<'a> {
 }
 
 impl<'a> crate::traits::TableDef<'a> for Sdt<'a> {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x42, 0x42), (0x46, 0x46)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[
+        (TABLE_ID_ACTUAL, TABLE_ID_ACTUAL),
+        (TABLE_ID_OTHER, TABLE_ID_OTHER),
+    ];
     const NAME: &'static str = "SERVICE_DESCRIPTION";
 }
 

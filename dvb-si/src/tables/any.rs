@@ -131,8 +131,14 @@ macro_rules! declare_tables {
             /// directly as `T`. Useful for types excluded from the default
             /// dispatch, e.g.:
             ///
-            /// ```ignore
-            /// let mpe = AnyTable::parse_as::<MpeDatagramSection>(bytes)?;
+            /// ```rust
+            /// use dvb_si::tables::AnyTable;
+            /// use dvb_si::tables::mpe::MpeDatagramSection;
+            ///
+            /// // A deliberately-too-short slice: parse_as propagates the
+            /// // BufferTooShort error from MpeDatagramSection::parse.
+            /// let err = AnyTable::parse_as::<MpeDatagramSection>(&[0x3E, 0x00]);
+            /// assert!(err.is_err());
             /// ```
             ///
             /// # Errors
@@ -146,7 +152,7 @@ macro_rules! declare_tables {
         }
 
         #[cfg(test)]
-        mod declare_tables_drift {
+        mod macro_drift {
             #[test]
             fn ranges_match_tabledef() {
                 use crate::traits::TableDef;

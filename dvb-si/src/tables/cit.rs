@@ -247,7 +247,7 @@ impl<'a> Table<'a> for Cit<'a> {
 }
 
 impl<'a> crate::traits::TableDef<'a> for Cit<'a> {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x77, 0x77)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "CONTENT_IDENTIFIER";
 }
 

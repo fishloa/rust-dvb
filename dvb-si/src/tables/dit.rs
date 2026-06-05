@@ -89,7 +89,7 @@ impl<'a> Table<'a> for Dit {
 }
 
 impl<'a> crate::traits::TableDef<'a> for Dit {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x7E, 0x7E)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "DISCONTINUITY_INFORMATION";
 }
 

@@ -164,7 +164,7 @@ impl<'a> Table<'a> for Sat<'a> {
 }
 
 impl<'a> crate::traits::TableDef<'a> for Sat<'a> {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x4D, 0x4D)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "SATELLITE_ACCESS";
 }
 

@@ -139,7 +139,7 @@ impl<'a> Table<'a> for Rst {
 }
 
 impl<'a> crate::traits::TableDef<'a> for Rst {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x71, 0x71)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "RUNNING_STATUS";
 }
 

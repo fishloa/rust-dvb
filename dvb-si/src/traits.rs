@@ -38,6 +38,9 @@ pub trait TableDef<'a>: dvb_common::Parse<'a, Error = crate::error::Error> {
     const TABLE_ID_RANGES: &'static [(u8, u8)];
     /// Spec name for diagnostics. SCREAMING_SNAKE, suffix-free:
     /// `PROGRAM_ASSOCIATION`, `EVENT_INFORMATION`, `SERVICE_DESCRIPTION`.
+    ///
+    /// Deliberate exceptions: `DSM_CC_SECTION` and `MPE_DATAGRAM_SECTION` keep
+    /// `_SECTION` because it is part of the spec entity name, not a type suffix.
     const NAME: &'static str;
 }
 

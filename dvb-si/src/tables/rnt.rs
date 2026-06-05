@@ -205,8 +205,8 @@ impl<'a> Table<'a> for Rnt<'a> {
 }
 
 impl<'a> crate::traits::TableDef<'a> for Rnt<'a> {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x79, 0x79)];
-    const NAME: &'static str = "RELATED_AND_NEIGHBOURING_TABLE";
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
+    const NAME: &'static str = "RELATED_AND_NEIGHBOURING";
 }
 
 #[cfg(test)]

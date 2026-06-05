@@ -175,7 +175,7 @@ impl<'a> Table<'a> for Cat {
 }
 
 impl<'a> crate::traits::TableDef<'a> for Cat {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x01, 0x01)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "CONDITIONAL_ACCESS";
 }
 

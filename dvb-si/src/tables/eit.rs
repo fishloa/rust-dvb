@@ -275,7 +275,8 @@ impl<'a> Table<'a> for Eit<'a> {
 }
 
 impl<'a> crate::traits::TableDef<'a> for Eit<'a> {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x4E, 0x6F)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] =
+        &[(TABLE_ID_PF_ACTUAL, TABLE_ID_SCHEDULE_OTHER_LAST)];
     const NAME: &'static str = "EVENT_INFORMATION";
 }
 

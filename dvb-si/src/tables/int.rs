@@ -297,7 +297,7 @@ impl<'a> Table<'a> for Int<'a> {
 }
 
 impl<'a> crate::traits::TableDef<'a> for Int<'a> {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x4C, 0x4C)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "IP_MAC_NOTIFICATION";
 }
 

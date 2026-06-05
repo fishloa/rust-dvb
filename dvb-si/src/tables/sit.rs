@@ -157,7 +157,7 @@ impl<'a> Table<'a> for Sit {
 }
 
 impl<'a> crate::traits::TableDef<'a> for Sit {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x7F, 0x7F)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "SELECTION_INFORMATION";
 }
 

@@ -292,7 +292,7 @@ impl<'a> Table<'a> for Nit<'a> {
 }
 
 impl<'a> crate::traits::TableDef<'a> for Nit<'a> {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x40, 0x41)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID_ACTUAL, TABLE_ID_OTHER)];
     const NAME: &'static str = "NETWORK_INFORMATION";
 }
 

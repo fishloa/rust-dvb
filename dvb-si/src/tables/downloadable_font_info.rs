@@ -370,7 +370,7 @@ impl<'a> Table<'a> for DownloadableFontInfoSection<'a> {
 }
 
 impl<'a> crate::traits::TableDef<'a> for DownloadableFontInfoSection<'a> {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x7C, 0x7C)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "DOWNLOADABLE_FONT_INFO";
 }
 

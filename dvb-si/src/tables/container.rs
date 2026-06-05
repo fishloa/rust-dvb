@@ -194,7 +194,7 @@ impl<'a> Table<'a> for Container<'a> {
 }
 
 impl<'a> crate::traits::TableDef<'a> for Container<'a> {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x75, 0x75)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "CONTAINER";
 }
 

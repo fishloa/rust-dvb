@@ -257,7 +257,7 @@ impl<'a> Table<'a> for MpeFec<'a> {
 }
 
 impl<'a> crate::traits::TableDef<'a> for MpeFec<'a> {
-    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(0x78, 0x78)];
+    const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "MPE_FEC";
 }
 
