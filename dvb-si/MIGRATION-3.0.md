@@ -67,9 +67,10 @@ aren't a struct field. The whole `DescriptorLoop` walk delegates to it.
 
 These are **not** flat SI descriptor loops, so they remain raw byte slices:
 
-- `int.loops`, `unt.platform_loop` — DSM-CC `compatibilityDescriptor` /
-  target+operational sub-loops (length-prefixed sub-structures, **not** a flat
-  tag/length descriptor sequence).
+- `int.loops` — EN 301 192 target/operational sub-loop pairs;
+  `unt.platform_loop` — TS 102 006 DSM-CC `compatibilityDescriptor` group
+  records. Both are length-prefixed sub-structures, **not** flat tag/length
+  descriptor sequences.
 - `rct.link_info_loop` — link_info() entries (their own 12-bit-length framing).
 - `rnt.resolution_providers` — resolution-provider records.
 - `sit.service_loop` — per-service records (`service_id` + `running_status` +
