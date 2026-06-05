@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-06-05
+
+### Added
+- `AnyPayload::name()` — macro-generated diagnostic label from each type's
+  `PayloadDef::NAME` (`"BBFRAME"`, …); `"UNKNOWN"` for the fallthrough
+  variant. (#18) `t2mi_dump` now prints it.
+
 ## [2.0.0] — 2026-06-05
 
 Version-lockstep release with the workspace (dvb-si 2.0 typed client API).

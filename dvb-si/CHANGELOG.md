@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.0 — 2026-06-05
+
+### Added
+- `AnyTable::name()` — macro-generated diagnostic label from each type's
+  `TableDef::NAME` (`"PROGRAM_ASSOCIATION"`, …); `"UNKNOWN"` for the
+  fallthrough variant. (#18)
+- `AnyDescriptor::name()` — same, with `"CUSTOM"` for runtime-registered
+  `Other` descriptors.
+- `si_dump` example simplified accordingly (the 35-line variant match is gone).
+
 ## 2.0.0 — 2026-06-05
 
 Typed, trait-driven client API: feed 188-byte TS packets, get decoded `SectionEvent`s
