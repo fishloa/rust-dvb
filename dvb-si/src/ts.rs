@@ -193,8 +193,10 @@ impl SectionReassembler {
     /// Feed a TS payload and whether its packet had PUSI set.
     ///
     /// Extracts complete SI sections into the internal queue. A single call
-    /// can produce zero or one section (the queue is for future-proofing
-    /// where one feed might yield multiple sections).
+    /// can produce zero, one, or **several** sections — a payload may
+    /// concatenate multiple complete sections after the `pointer_field`
+    /// (EN 300 468 §5.1.4; common on EMM PIDs). Drain with a
+    /// `while let Some(s) = r.pop_section()` loop, not a single `if let`.
     pub fn feed(&mut self, payload: &[u8], pusi: bool) {
         if pusi {
             // A PUSI packet whose adaptation field consumed the whole body is
@@ -218,9 +220,6 @@ impl SectionReassembler {
                 return;
             }
             self.buf.extend_from_slice(new_data);
-            if self.buf.len() >= 3 {
-                self.expected = 3 + (((self.buf[1] & 0x0F) as usize) << 8 | self.buf[2] as usize);
-            }
         } else {
             if self.buf.is_empty() {
                 return;
@@ -233,12 +232,44 @@ impl SectionReassembler {
             self.buf.extend_from_slice(payload);
         }
 
-        if self.expected > 0 && self.buf.len() >= self.expected {
-            // split_to returns the first `expected` bytes as an owned BytesMut,
-            // leaving the remaining bytes in self.buf — cheap (shifts pointers).
-            let section = self.buf.split_to(self.expected).freeze();
-            self.ready.push_back(section);
-            self.expected = 0;
+        self.drain_complete_sections();
+    }
+
+    /// Queue every complete section the buffer currently holds.
+    ///
+    /// A single TS payload may concatenate multiple complete sections after
+    /// the `pointer_field` (legal per ETSI EN 300 468 §5.1.4 and common on
+    /// EMM PIDs, which pack several short messages into one payload). We must
+    /// keep extracting until the buffer holds only a partial (multi-packet
+    /// spanning) section, which is stashed as `expected` for the next
+    /// continuation. A `0xFF` where a `table_id` is expected marks the rest of
+    /// the payload as stuffing.
+    fn drain_complete_sections(&mut self) {
+        loop {
+            if self.buf.len() < 3 {
+                // Not enough for a section header yet; keep the partial bytes
+                // and wait for the next packet to complete the header.
+                self.expected = 0;
+                break;
+            }
+            if self.buf[0] == 0xFF {
+                // Stuffing where a table_id is expected — payload tail is fill.
+                self.buf.clear();
+                self.expected = 0;
+                break;
+            }
+            let exp = 3 + (((self.buf[1] & 0x0F) as usize) << 8 | self.buf[2] as usize);
+            if self.buf.len() >= exp {
+                // split_to returns the first `exp` bytes as an owned BytesMut,
+                // leaving the remainder in self.buf — cheap (shifts pointers).
+                let section = self.buf.split_to(exp).freeze();
+                self.ready.push_back(section);
+                self.expected = 0;
+            } else {
+                // Partial section spanning into later packets.
+                self.expected = exp;
+                break;
+            }
         }
     }
 
@@ -380,6 +411,85 @@ mod tests {
             .pop_section()
             .expect("single-packet section should pop");
         assert_eq!(out.as_ref(), &section[..]);
+    }
+
+    #[test]
+    fn reassembler_extracts_all_concatenated_sections_in_one_payload() {
+        // Issue #29: a single PUSI payload packing three complete short
+        // sections after the pointer_field. All three must be queued — the
+        // old `feed` stopped after the first and the rest were silently lost
+        // (the CAS/EMM data-loss bug: SHARED EMMs landing as the 2nd+ section).
+        let s1 = build_section(0x42, &[0x11, 0x22]); // 5 bytes
+        let s2 = build_section(0x46, &[0x33]); // 4 bytes
+        let s3 = build_section(0x4A, &[0x44, 0x55, 0x66]); // 6 bytes
+
+        let mut concat = Vec::new();
+        concat.extend_from_slice(&s1);
+        concat.extend_from_slice(&s2);
+        concat.extend_from_slice(&s3);
+        let payload = build_pusi_payload(0, &[], &concat);
+
+        let mut reasm = SectionReassembler::default();
+        reasm.feed(&payload, true);
+
+        // Consumers must drain with a loop, not a single `if let`.
+        let got: Vec<_> = std::iter::from_fn(|| reasm.pop_section()).collect();
+        assert_eq!(got.len(), 3, "all three concatenated sections must pop");
+        assert_eq!(got[0].as_ref(), &s1[..]);
+        assert_eq!(got[1].as_ref(), &s2[..]);
+        assert_eq!(got[2].as_ref(), &s3[..]);
+    }
+
+    #[test]
+    fn reassembler_stops_at_stuffing_after_concatenated_sections() {
+        // Two sections then 0xFF stuffing fill — the stuffing must not be
+        // mistaken for a section header (0xFF table_id) nor leak into a
+        // section; both real sections still pop.
+        let s1 = build_section(0x42, &[0xAA]); // 4 bytes
+        let s2 = build_section(0x46, &[0xBB, 0xCC]); // 5 bytes
+        let mut concat = Vec::new();
+        concat.extend_from_slice(&s1);
+        concat.extend_from_slice(&s2);
+        concat.extend_from_slice(&[0xFF, 0xFF, 0xFF, 0xFF]); // stuffing tail
+        let payload = build_pusi_payload(0, &[], &concat);
+
+        let mut reasm = SectionReassembler::default();
+        reasm.feed(&payload, true);
+
+        let got: Vec<_> = std::iter::from_fn(|| reasm.pop_section()).collect();
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].as_ref(), &s1[..]);
+        assert_eq!(got[1].as_ref(), &s2[..]);
+        assert!(
+            reasm.is_empty(),
+            "stuffing tail must be discarded, not buffered"
+        );
+    }
+
+    #[test]
+    fn reassembler_concatenated_then_spanning_tail() {
+        // One complete section followed by the head of a second that spans
+        // into a continuation packet: first pops immediately, second pops
+        // once the continuation arrives.
+        let s1 = build_section(0x42, &[0x01, 0x02]); // 5 bytes
+        let s2 = build_section(0x46, &[0x09u8; 60]); // 63 bytes
+        let split = 30;
+
+        let mut head = Vec::new();
+        head.extend_from_slice(&s1);
+        head.extend_from_slice(&s2[..split]);
+        let payload1 = build_pusi_payload(0, &[], &head);
+        let payload2 = s2[split..].to_vec();
+
+        let mut reasm = SectionReassembler::default();
+        reasm.feed(&payload1, true);
+        let first = reasm.pop_section().expect("first section pops at once");
+        assert_eq!(first.as_ref(), &s1[..]);
+        assert!(reasm.pop_section().is_none(), "second is still partial");
+
+        reasm.feed(&payload2, false);
+        let second = reasm.pop_section().expect("second pops after continuation");
+        assert_eq!(second.as_ref(), &s2[..]);
     }
 
     #[test]
