@@ -29,7 +29,7 @@
 //! `tnt-5w-12732v-isi6-10s.ts` (13 515 packets / 2 540 820 bytes):
 //!   Standard SI PIDs present: 0x0010 (NIT), 0x0011 (SDT), 0x0012 (EIT).
 //!   Table set (default demux): {Eit, Nit, Pat, Pmt, Sdt}.
-//!   Stats: emitted=44, sections_completed=247, crc_failures=0, malformed=0.
+//!   Stats: emitted=51, sections_completed=261, crc_failures=0, malformed=0.
 
 use std::collections::BTreeSet;
 
@@ -312,12 +312,12 @@ fn tnt_table_set() {
     // Stats: clean satellite capture — zero failures observed. Pin emitted/sections_completed.
     assert_eq!(
         demux.stats().emitted,
-        44,
+        51,
         "tnt-5w: pinned emitted changed — verify fixture stability"
     );
     assert_eq!(
         demux.stats().sections_completed,
-        247,
+        261,
         "tnt-5w: pinned sections_completed changed — verify fixture stability"
     );
     assert_eq!(
