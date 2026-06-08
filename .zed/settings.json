@@ -1,0 +1,18 @@
+{
+  // rust-analyzer's default file watcher is client-driven ("client"), and Zed
+  // does not forward on-disk changes made outside the editor — git checkout /
+  // merge, CLI tools, coding agents. The index then goes stale and reports
+  // phantom errors (e.g. "type doesn't exist") after a branch switch, even
+  // though `cargo check` is clean. Server-side (notify-based) watching makes
+  // rust-analyzer pick up those changes itself.
+  //
+  // Workspace-scoped analysis settings (all-features, clippy) live in the
+  // sibling rust-analyzer.toml, which every LSP client reads directly.
+  "lsp": {
+    "rust-analyzer": {
+      "initialization_options": {
+        "files": { "watcher": "server" }
+      }
+    }
+  }
+}

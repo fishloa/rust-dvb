@@ -1,0 +1,18 @@
+# rust-analyzer project configuration (ratoml).
+#
+# Read directly by the rust-analyzer *server* from the workspace root, so every
+# editor / LSP client launched against this repo picks it up — no per-editor
+# duplication. Only workspace-scoped settings belong here; client/global
+# settings such as `files.watcher` must be set in each editor's LSP
+# initialization options (see CONTRIBUTING / README dev notes).
+
+# Analyse with every feature on — matches the project's default build & test
+# (CLAUDE.md: everything is --all-features by default; it must also build
+# --no-default-features, checked in CI).
+[cargo]
+features = "all"
+
+# Mirror CI's gate so the editor flags exactly what CI will: clippy, all targets.
+[check]
+command = "clippy"
+allTargets = true
