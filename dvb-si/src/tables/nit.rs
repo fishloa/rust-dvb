@@ -57,7 +57,7 @@ pub struct NitTransportStream<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
-pub struct Nit<'a> {
+pub struct NitSection<'a> {
     /// Variant discriminator (table_id 0x40 vs 0x41).
     pub kind: NitKind,
     /// Network identifier.
@@ -78,7 +78,7 @@ pub struct Nit<'a> {
     pub transport_streams: Vec<NitTransportStream<'a>>,
 }
 
-impl<'a> Parse<'a> for Nit<'a> {
+impl<'a> Parse<'a> for NitSection<'a> {
     type Error = crate::error::Error;
     fn parse(bytes: &'a [u8]) -> Result<Self> {
         let min_len = MIN_HEADER_LEN + EXTENSION_HEADER_LEN + POST_EXTENSION_LEN + CRC_LEN;
@@ -86,7 +86,7 @@ impl<'a> Parse<'a> for Nit<'a> {
             return Err(Error::BufferTooShort {
                 need: min_len,
                 have: bytes.len(),
-                what: "Nit",
+                what: "NitSection",
             });
         }
         let kind = match bytes[0] {
@@ -95,7 +95,7 @@ impl<'a> Parse<'a> for Nit<'a> {
             other => {
                 return Err(Error::UnexpectedTableId {
                     table_id: other,
-                    what: "Nit",
+                    what: "NitSection",
                     expected: &[TABLE_ID_ACTUAL, TABLE_ID_OTHER],
                 });
             }
@@ -146,7 +146,7 @@ impl<'a> Parse<'a> for Nit<'a> {
             return Err(Error::BufferTooShort {
                 need: ts_loop_end - ts_loop_start + 2,
                 have: ts_loop_end - ts_loop_start,
-                what: "Nit transport_stream_loop",
+                what: "NitSection transport_stream_loop",
             });
         }
 
@@ -170,7 +170,7 @@ impl<'a> Parse<'a> for Nit<'a> {
                 return Err(Error::BufferTooShort {
                     need: pos + TS_HEADER_LEN,
                     have: loop_end,
-                    what: "Nit transport_stream_entry",
+                    what: "NitSection transport_stream_entry",
                 });
             }
 
@@ -200,7 +200,7 @@ impl<'a> Parse<'a> for Nit<'a> {
             pos = desc_end;
         }
 
-        Ok(Nit {
+        Ok(NitSection {
             kind,
             network_id,
             version_number,
@@ -213,7 +213,7 @@ impl<'a> Parse<'a> for Nit<'a> {
     }
 }
 
-impl Serialize for Nit<'_> {
+impl Serialize for NitSection<'_> {
     type Error = crate::error::Error;
     fn serialized_len(&self) -> usize {
         let net_desc_len = self.network_descriptors.len();
@@ -291,12 +291,12 @@ impl Serialize for Nit<'_> {
     }
 }
 
-impl<'a> Table<'a> for Nit<'a> {
+impl<'a> Table<'a> for NitSection<'a> {
     const TABLE_ID: u8 = TABLE_ID_ACTUAL;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Nit<'a> {
+impl<'a> crate::traits::TableDef<'a> for NitSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID_ACTUAL, TABLE_ID_OTHER)];
     const NAME: &'static str = "NETWORK_INFORMATION";
 }
@@ -361,14 +361,20 @@ mod tests {
     fn parse_actual_and_other_distinguished_by_table_id() {
         let a = build_nit(NitKind::Actual, 0x0001, &[], &[]);
         let o = build_nit(NitKind::Other, 0x0001, &[], &[]);
-        assert!(matches!(Nit::parse(&a).unwrap().kind, NitKind::Actual));
-        assert!(matches!(Nit::parse(&o).unwrap().kind, NitKind::Other));
+        assert!(matches!(
+            NitSection::parse(&a).unwrap().kind,
+            NitKind::Actual
+        ));
+        assert!(matches!(
+            NitSection::parse(&o).unwrap().kind,
+            NitKind::Other
+        ));
     }
 
     #[test]
     fn parse_network_id_extracted() {
         let bytes = build_nit(NitKind::Actual, 0x0020, &[], &[]);
-        let nit = Nit::parse(&bytes).unwrap();
+        let nit = NitSection::parse(&bytes).unwrap();
         assert_eq!(nit.network_id, 0x0020);
     }
 
@@ -376,7 +382,7 @@ mod tests {
     fn parse_network_wide_descriptors() {
         let net_desc: [u8; 4] = [0x40, 0x02, 0x4E, 0x65]; // network_name descriptor
         let bytes = build_nit(NitKind::Actual, 0x0001, &net_desc, &[]);
-        let nit = Nit::parse(&bytes).unwrap();
+        let nit = NitSection::parse(&bytes).unwrap();
         assert_eq!(nit.network_descriptors.raw(), &net_desc[..]);
     }
 
@@ -395,7 +401,7 @@ mod tests {
                 (0x5678, 0x0020, vec![]),
             ],
         );
-        let nit = Nit::parse(&bytes).unwrap();
+        let nit = NitSection::parse(&bytes).unwrap();
         assert_eq!(nit.transport_streams.len(), 2);
         assert_eq!(nit.transport_streams[0].transport_stream_id, 0x1234);
         assert_eq!(nit.transport_streams[0].original_network_id, 0x0020);
@@ -410,7 +416,7 @@ mod tests {
     #[test]
     fn parse_version_and_current_next() {
         let bytes = build_nit(NitKind::Actual, 0x0001, &[], &[]);
-        let nit = Nit::parse(&bytes).unwrap();
+        let nit = NitSection::parse(&bytes).unwrap();
         assert_eq!(nit.version_number, 0);
         assert!(nit.current_next_indicator);
     }
@@ -419,7 +425,7 @@ mod tests {
     fn serialize_round_trip() {
         let net_desc: [u8; 4] = [0x40, 0x02, 0x4E, 0x65];
         let ts_desc: [u8; 3] = [0x43, 0x01, 0x01];
-        let nit = Nit {
+        let nit = NitSection {
             kind: NitKind::Actual,
             network_id: 0x0020,
             version_number: 3,
@@ -442,20 +448,20 @@ mod tests {
         };
         let mut buf = vec![0u8; nit.serialized_len()];
         nit.serialize_into(&mut buf).unwrap();
-        let re = Nit::parse(&buf).unwrap();
+        let re = NitSection::parse(&buf).unwrap();
         assert_eq!(nit, re);
     }
 
     #[test]
     fn zero_transport_streams_is_valid() {
         let bytes = build_nit(NitKind::Actual, 0x0001, &[], &[]);
-        let nit = Nit::parse(&bytes).unwrap();
+        let nit = NitSection::parse(&bytes).unwrap();
         assert_eq!(nit.transport_streams.len(), 0);
     }
 
     #[test]
     fn parse_rejects_short_buffer() {
-        let err = Nit::parse(&[0x40, 0x00]).unwrap_err();
+        let err = NitSection::parse(&[0x40, 0x00]).unwrap_err();
         assert!(matches!(err, Error::BufferTooShort { .. }));
     }
 
@@ -463,7 +469,7 @@ mod tests {
     fn parse_rejects_wrong_table_id() {
         let mut bytes = build_nit(NitKind::Actual, 0x0001, &[], &[]);
         bytes[0] = 0x00;
-        let err = Nit::parse(&bytes).unwrap_err();
+        let err = NitSection::parse(&bytes).unwrap_err();
         assert!(matches!(
             err,
             Error::UnexpectedTableId { table_id: 0x00, .. }
@@ -472,7 +478,7 @@ mod tests {
 
     #[test]
     fn serialize_too_small_buffer_returns_error() {
-        let nit = Nit {
+        let nit = NitSection {
             kind: NitKind::Actual,
             network_id: 0x0001,
             version_number: 0,

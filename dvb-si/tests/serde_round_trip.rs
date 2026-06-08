@@ -7,8 +7,8 @@
 //! `serde_json::to_string`/`to_value`, and asserting the serialized shape
 //! (valid JSON with the wire-relevant fields / typed sub-values).
 //!
-//! Coverage now also includes the companion tables — `Container`,
-//! `MpeDatagramSection`, `MpeFec`, `MpeIfec`, `ProtectionMessageSection`,
+//! Coverage now also includes the companion tables — `ContainerSection`,
+//! `MpeDatagramSection`, `MpeFecSection`, `MpeIfecSection`, `ProtectionMessageSection`,
 //! `DownloadableFontInfoSection` — plus a DSM-CC object-carousel case
 //! (`UnMessage::Dii`).
 #![cfg(feature = "serde")]
@@ -17,34 +17,34 @@ use dvb_common::Parse;
 use dvb_si::carousel::{Dii, DiiModule, UnMessage};
 use dvb_si::descriptors::DescriptorLoop;
 use dvb_si::tables::{
-    ait::{Ait, AitApplication, ApplicationIdentifier},
-    bat::{Bat, BatTransportStream},
-    cat::Cat,
-    cit::Cit,
-    container::Container,
-    dit::Dit,
+    ait::{AitApplication, AitSection, ApplicationIdentifier},
+    bat::{BatSection, BatTransportStream},
+    cat::CatSection,
+    cit::CitSection,
+    container::ContainerSection,
+    dit::DitSection,
     downloadable_font_info::{DownloadableFontInfoSection, FontInfo},
     dsmcc::DsmccSection,
-    eit::{Eit, EitEvent, EitKind},
-    int::Int,
+    eit::{EitEvent, EitKind, EitSection},
+    int::IntSection,
     mpe::MpeDatagramSection,
-    mpe_fec::{MpeFec, RealTimeParameters as MpeFecRtp},
-    mpe_ifec::{MpeIfec, RealTimeParameters as MpeIfecRtp},
-    nit::{Nit, NitKind, NitTransportStream},
-    pat::{Pat, PatEntry},
-    pmt::{Pmt, PmtStream},
+    mpe_fec::{MpeFecSection, RealTimeParameters as MpeFecRtp},
+    mpe_ifec::{MpeIfecSection, RealTimeParameters as MpeIfecRtp},
+    nit::{NitKind, NitSection, NitTransportStream},
+    pat::{PatEntry, PatSection},
+    pmt::{PmtSection, PmtStream},
     protection_message::{ProtectionMessageBody, ProtectionMessageSection},
-    rct::Rct,
-    rnt::Rnt,
-    rst::{Rst, RstEntry},
-    sat::Sat,
-    sdt::{Sdt, SdtKind, SdtService},
-    sit::Sit,
-    st::St,
-    tdt::Tdt,
-    tot::Tot,
-    tsdt::Tsdt,
-    unt::Unt,
+    rct::RctSection,
+    rnt::RntSection,
+    rst::{RstEntry, RstSection},
+    sat::SatSection,
+    sdt::{SdtKind, SdtSection, SdtService},
+    sit::SitSection,
+    st::StSection,
+    tdt::TdtSection,
+    tot::TotSection,
+    tsdt::TsdtSection,
+    unt::UntSection,
 };
 use dvb_si::text::{DvbText, LangCode};
 
@@ -59,7 +59,7 @@ fn pat_serializes_to_valid_json() {
         0x00, 0x01, 0xE1, 0x00, // program 1 -> PMT PID 0x100
         0x00, 0x00, 0x00, 0x00, // CRC placeholder
     ];
-    let parsed = Pat::parse(&bytes).expect("parse PAT");
+    let parsed = PatSection::parse(&bytes).expect("parse PAT");
     let j = serde_json::to_string(&parsed).expect("serialize PAT");
     assert_valid_json_with_keys(&j, &["transport_stream_id", "entries"]);
 }
@@ -70,7 +70,7 @@ fn tdt_serializes_to_valid_json() {
         0x70, 0x70, 0x05, // table_id=0x70, section_length=5
         0xDA, 0x06, 0x12, 0x34, 0x56, // 5-byte UTC time
     ];
-    let parsed = Tdt::parse(&bytes).expect("parse TDT");
+    let parsed = TdtSection::parse(&bytes).expect("parse TDT");
     let j = serde_json::to_string(&parsed).expect("serialize TDT");
     assert_valid_json_with_keys(&j, &["utc_time_raw"]);
 }
@@ -78,14 +78,14 @@ fn tdt_serializes_to_valid_json() {
 #[test]
 fn st_serializes_to_valid_json() {
     let bytes: Vec<u8> = vec![0x72, 0x30, 0x03, 0x00, 0x00, 0x00];
-    let parsed = St::parse(&bytes).expect("parse ST");
+    let parsed = StSection::parse(&bytes).expect("parse ST");
     let j = serde_json::to_string(&parsed).expect("serialize ST");
     assert_valid_json_with_keys(&j, &["payload"]);
 }
 
 #[test]
 fn pat_with_multiple_entries_serializes() {
-    let p = Pat {
+    let p = PatSection {
         transport_stream_id: 0x1234,
         version_number: 5,
         current_next_indicator: true,
@@ -123,7 +123,7 @@ fn assert_valid_json_with_keys(j: &str, keys: &[&str]) {
 
 #[test]
 fn pmt_serializes_to_valid_json() {
-    let pmt = Pmt {
+    let pmt = PmtSection {
         program_number: 1,
         version_number: 0,
         current_next_indicator: true,
@@ -141,7 +141,7 @@ fn pmt_serializes_to_valid_json() {
 
 #[test]
 fn sdt_serializes_to_valid_json() {
-    let sdt = Sdt {
+    let sdt = SdtSection {
         kind: SdtKind::Actual,
         transport_stream_id: 0x1234,
         version_number: 0,
@@ -172,7 +172,7 @@ fn sdt_service_descriptor_loop_serializes_decoded_name() {
     let raw_loop: &[u8] = &[
         0x48, 0x09, 0x01, 0x03, b'B', b'B', b'C', 0x03, b'O', b'N', b'E',
     ];
-    let sdt = Sdt {
+    let sdt = SdtSection {
         kind: SdtKind::Actual,
         transport_stream_id: 0x1234,
         version_number: 0,
@@ -202,7 +202,7 @@ fn sdt_service_descriptor_loop_serializes_decoded_name() {
 
 #[test]
 fn eit_serializes_to_valid_json() {
-    let eit = Eit {
+    let eit = EitSection {
         kind: EitKind::PresentFollowingActual,
         table_id: 0x4E,
         service_id: 0x0001,
@@ -229,7 +229,7 @@ fn eit_serializes_to_valid_json() {
 
 #[test]
 fn nit_serializes_to_valid_json() {
-    let nit = Nit {
+    let nit = NitSection {
         kind: NitKind::Actual,
         network_id: 0x0020,
         version_number: 0,
@@ -249,7 +249,7 @@ fn nit_serializes_to_valid_json() {
 
 #[test]
 fn tot_serializes_to_valid_json() {
-    let tot = Tot {
+    let tot = TotSection {
         utc_time_raw: [0xDA, 0x06, 0x12, 0x34, 0x56],
         descriptors: DescriptorLoop::new(&[]),
     };
@@ -259,7 +259,7 @@ fn tot_serializes_to_valid_json() {
 
 #[test]
 fn ait_serializes_to_valid_json() {
-    let ait = Ait {
+    let ait = AitSection {
         application_type: 0x0010,
         version_number: 0,
         current_next_indicator: true,
@@ -294,7 +294,7 @@ fn dsmcc_section_serializes_to_valid_json() {
 
 #[test]
 fn cat_serializes_to_valid_json() {
-    let cat = Cat {
+    let cat = CatSection {
         version_number: 0,
         current_next_indicator: true,
         section_number: 0,
@@ -307,7 +307,7 @@ fn cat_serializes_to_valid_json() {
 
 #[test]
 fn tsdt_serializes_to_valid_json() {
-    let tsdt = Tsdt {
+    let tsdt = TsdtSection {
         table_id_extension: 0xFFFF,
         version_number: 0,
         current_next_indicator: true,
@@ -321,7 +321,7 @@ fn tsdt_serializes_to_valid_json() {
 
 #[test]
 fn bat_serializes_to_valid_json() {
-    let bat = Bat {
+    let bat = BatSection {
         bouquet_id: 0x0001,
         version_number: 0,
         current_next_indicator: true,
@@ -340,7 +340,7 @@ fn bat_serializes_to_valid_json() {
 
 #[test]
 fn rst_serializes_to_valid_json() {
-    let rst = Rst {
+    let rst = RstSection {
         entries: vec![RstEntry {
             transport_stream_id: 0x1234,
             original_network_id: 0x0020,
@@ -355,7 +355,7 @@ fn rst_serializes_to_valid_json() {
 
 #[test]
 fn dit_serializes_to_valid_json() {
-    let dit = Dit {
+    let dit = DitSection {
         transition_flag: true,
     };
     let j = serde_json::to_string(&dit).expect("serialize DIT");
@@ -365,7 +365,7 @@ fn dit_serializes_to_valid_json() {
 #[test]
 fn sit_serializes_to_valid_json() {
     use dvb_si::tables::sit::SitService;
-    let sit = Sit {
+    let sit = SitSection {
         table_id_extension: 0xFFFF,
         version_number: 0,
         current_next_indicator: true,
@@ -395,7 +395,7 @@ fn sit_serializes_to_valid_json() {
 
 #[test]
 fn sat_serializes_to_valid_json() {
-    let sat = Sat {
+    let sat = SatSection {
         satellite_table_id: 0,
         table_count: 0,
         version_number: 0,
@@ -410,7 +410,7 @@ fn sat_serializes_to_valid_json() {
 
 #[test]
 fn unt_serializes_to_valid_json() {
-    let unt = Unt {
+    let unt = UntSection {
         action_type: 0x01,
         oui_hash: 0x00,
         version_number: 0,
@@ -428,7 +428,7 @@ fn unt_serializes_to_valid_json() {
 
 #[test]
 fn int_serializes_to_valid_json() {
-    let int = Int {
+    let int = IntSection {
         action_type: 0x01,
         platform_id_hash: 0x00,
         version_number: 0,
@@ -446,7 +446,7 @@ fn int_serializes_to_valid_json() {
 
 #[test]
 fn rct_serializes_to_valid_json() {
-    let rct = Rct {
+    let rct = RctSection {
         table_id_extension_flag: false,
         service_id: 0x0001,
         version_number: 0,
@@ -464,7 +464,7 @@ fn rct_serializes_to_valid_json() {
 
 #[test]
 fn cit_serializes_to_valid_json() {
-    let cit = Cit {
+    let cit = CitSection {
         private_indicator: false,
         service_id: 0x0001,
         version_number: 0,
@@ -482,7 +482,7 @@ fn cit_serializes_to_valid_json() {
 
 #[test]
 fn rnt_serializes_to_valid_json() {
-    let rnt = Rnt {
+    let rnt = RntSection {
         context_id: 0x0001,
         version_number: 0,
         current_next_indicator: true,
@@ -500,7 +500,7 @@ fn rnt_serializes_to_valid_json() {
 
 #[test]
 fn container_serializes_to_valid_json() {
-    let container = Container {
+    let container = ContainerSection {
         private_indicator: true,
         container_id: 0xBEEF,
         version_number: 9,
@@ -509,7 +509,7 @@ fn container_serializes_to_valid_json() {
         last_section_number: 0,
         container_data: &[0xCA, 0xFE],
     };
-    let j = serde_json::to_string(&container).expect("serialize Container");
+    let j = serde_json::to_string(&container).expect("serialize ContainerSection");
     assert_valid_json_with_keys(&j, &["container_id", "version_number", "container_data"]);
 }
 
@@ -534,7 +534,7 @@ fn mpe_datagram_section_serializes_to_valid_json() {
 
 #[test]
 fn mpe_fec_serializes_to_valid_json() {
-    let mpe_fec = MpeFec {
+    let mpe_fec = MpeFecSection {
         private_indicator: true,
         padding_columns: 12,
         current_next_indicator: true,
@@ -548,13 +548,13 @@ fn mpe_fec_serializes_to_valid_json() {
         },
         rs_data: &[0x01, 0x02],
     };
-    let j = serde_json::to_string(&mpe_fec).expect("serialize MpeFec");
+    let j = serde_json::to_string(&mpe_fec).expect("serialize MpeFecSection");
     assert_valid_json_with_keys(&j, &["padding_columns", "real_time_parameters", "rs_data"]);
 }
 
 #[test]
 fn mpe_ifec_serializes_to_valid_json() {
-    let mpe_ifec = MpeIfec {
+    let mpe_ifec = MpeIfecSection {
         private_indicator: true,
         burst_number: 7,
         ifec_burst_size: 8,
@@ -570,7 +570,7 @@ fn mpe_ifec_serializes_to_valid_json() {
         },
         ifec_data: &[0x01, 0x02],
     };
-    let j = serde_json::to_string(&mpe_ifec).expect("serialize MpeIfec");
+    let j = serde_json::to_string(&mpe_ifec).expect("serialize MpeIfecSection");
     assert_valid_json_with_keys(&j, &["burst_number", "real_time_parameters", "ifec_data"]);
 }
 

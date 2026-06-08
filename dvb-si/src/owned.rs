@@ -1,7 +1,7 @@
 //! Own a parsed view past the input buffer's borrow (feature `yoke`).
 //!
 //! Tables and descriptor loops parse **zero-copy**, borrowing the input section
-//! slice — [`Pmt<'a>`](crate::tables::pmt::Pmt), [`Sdt<'a>`](crate::tables::sdt::Sdt),
+//! slice — [`PmtSection<'a>`](crate::tables::pmt::PmtSection), [`SdtSection<'a>`](crate::tables::sdt::SdtSection),
 //! [`DescriptorLoop<'a>`](crate::descriptors::DescriptorLoop), and so on. That is
 //! ideal for parse-and-discard, but a consumer that needs to **retain** a parsed
 //! table — stash it in a struct field, a cache, or a `tokio::sync::watch`
@@ -16,7 +16,7 @@
 //! ```
 //! use std::sync::Arc;
 //! use dvb_si::owned::Owned;
-//! use dvb_si::tables::pmt::Pmt;
+//! use dvb_si::tables::pmt::PmtSection;
 //! use dvb_common::Parse;
 //!
 //! # let section: Vec<u8> = dvb_si::owned::doc::pmt_section();
@@ -24,17 +24,17 @@
 //! let bytes: Arc<[u8]> = Arc::from(section);
 //!
 //! // Parse once, keep the result — no borrow of a local buffer escapes.
-//! let owned: Owned<Pmt<'static>> =
-//!     Owned::try_new(bytes, |b| Pmt::parse(b))?;
+//! let owned: Owned<PmtSection<'static>> =
+//!     Owned::try_new(bytes, |b| PmtSection::parse(b))?;
 //!
 //! // The owned value is 'static, so it can live in a struct field…
-//! struct Cache { pmt: Owned<Pmt<'static>> }
+//! struct Cache { pmt: Owned<PmtSection<'static>> }
 //! let cache = Cache { pmt: owned };
 //!
 //! // …and move across a thread boundary, then read the typed view back out
 //! // with no re-parse.
 //! let handle = std::thread::spawn(move || {
-//!     let pmt: &Pmt = cache.pmt.get();
+//!     let pmt: &PmtSection = cache.pmt.get();
 //!     (pmt.program_number, pmt.streams.len())
 //! });
 //! let (program_number, stream_count) = handle.join().unwrap();
@@ -51,7 +51,7 @@ use yoke::{Yoke, Yokeable};
 /// An owned, `'static`, `Send + Sync` bundle of (backing bytes, parsed view).
 ///
 /// `Y` is the view type with its lifetime set to `'static` — e.g.
-/// `Owned<Pmt<'static>>`, `Owned<Sdt<'static>>`,
+/// `Owned<PmtSection<'static>>`, `Owned<SdtSection<'static>>`,
 /// `Owned<DescriptorLoop<'static>>`. The backing buffer is an `Arc<[u8]>`, so
 /// [`Clone`] is a refcount bump and the view is shared, never re-parsed.
 ///
@@ -135,10 +135,10 @@ pub mod doc {
     /// doctest is self-contained and actually round-trips through the parser.
     #[must_use]
     pub fn pmt_section() -> Vec<u8> {
-        use crate::tables::pmt::{Pmt, PmtStream};
+        use crate::tables::pmt::{PmtSection, PmtStream};
         use dvb_common::Serialize;
 
-        let pmt = Pmt {
+        let pmt = PmtSection {
             program_number: 1,
             version_number: 0,
             current_next_indicator: true,

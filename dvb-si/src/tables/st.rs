@@ -19,12 +19,12 @@ const HEADER_LEN: usize = 3;
 /// Stuffing Table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct St {
+pub struct StSection {
     /// Raw stuffing bytes — any value, no meaning (§5.2.8).
     pub payload: Vec<u8>,
 }
 
-impl St {
+impl StSection {
     /// Construct a new ST table with the given stuffing bytes.
     #[inline]
     #[must_use]
@@ -47,7 +47,7 @@ impl St {
     }
 }
 
-impl<'a> Parse<'a> for St {
+impl<'a> Parse<'a> for StSection {
     type Error = crate::error::Error;
 
     fn parse(bytes: &'a [u8]) -> Result<Self> {
@@ -55,14 +55,14 @@ impl<'a> Parse<'a> for St {
             return Err(Error::BufferTooShort {
                 need: HEADER_LEN,
                 have: bytes.len(),
-                what: "St",
+                what: "StSection",
             });
         }
 
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "St",
+                what: "StSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -74,7 +74,7 @@ impl<'a> Parse<'a> for St {
             return Err(Error::BufferTooShort {
                 need: HEADER_LEN + payload_len,
                 have: bytes.len(),
-                what: "St payload",
+                what: "StSection payload",
             });
         }
 
@@ -87,7 +87,7 @@ impl<'a> Parse<'a> for St {
     }
 }
 
-impl Serialize for St {
+impl Serialize for StSection {
     type Error = crate::error::Error;
 
     fn serialized_len(&self) -> usize {
@@ -120,12 +120,12 @@ impl Serialize for St {
     }
 }
 
-impl<'a> Table<'a> for St {
+impl<'a> Table<'a> for StSection {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for St {
+impl<'a> crate::traits::TableDef<'a> for StSection {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "STUFFING";
 }
@@ -145,7 +145,7 @@ mod tests {
     fn parse_rejects_wrong_tag() {
         let bytes = [0x71, 0x70, 0x02, 0x00, 0x00];
         assert!(matches!(
-            St::parse(&bytes).unwrap_err(),
+            StSection::parse(&bytes).unwrap_err(),
             Error::UnexpectedTableId { table_id: 0x71, .. }
         ));
     }
@@ -153,7 +153,7 @@ mod tests {
     #[test]
     fn parse_empty_payload() {
         let bytes = make_st_section(&[]);
-        let st = St::parse(&bytes).unwrap();
+        let st = StSection::parse(&bytes).unwrap();
         assert!(st.is_empty());
     }
 
@@ -162,7 +162,7 @@ mod tests {
     #[test]
     fn parse_accepts_any_data_byte_value() {
         let bytes = make_st_section(&[0x00, 0xFF, 0xAA]);
-        let st = St::parse(&bytes).unwrap();
+        let st = StSection::parse(&bytes).unwrap();
         assert_eq!(st.payload, vec![0x00, 0xFF, 0xAA]);
         let mut buf = vec![0u8; st.serialized_len()];
         st.serialize_into(&mut buf).unwrap();
@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn serialize_writes_correct_header() {
-        let st = St::new(vec![0x00, 0x00]);
+        let st = StSection::new(vec![0x00, 0x00]);
         let mut buf = vec![0u8; st.serialized_len()];
         st.serialize_into(&mut buf).unwrap();
         assert_eq!(buf[0], TABLE_ID);
@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn serialize_empty_payload() {
-        let st = St::new(vec![]);
+        let st = StSection::new(vec![]);
         let mut buf = vec![0u8; st.serialized_len()];
         st.serialize_into(&mut buf).unwrap();
         assert_eq!(buf, [TABLE_ID, 0x70, 0x00]);
@@ -189,7 +189,7 @@ mod tests {
 
     #[test]
     fn serialize_rejects_too_small_buffer() {
-        let st = St::new(vec![0x00]);
+        let st = StSection::new(vec![0x00]);
         let mut too_small = vec![0u8; st.serialized_len() - 1];
         let err = st.serialize_into(&mut too_small).unwrap_err();
         assert!(matches!(err, Error::OutputBufferTooSmall { .. }));
@@ -197,28 +197,28 @@ mod tests {
 
     #[test]
     fn round_trip_preserves_all_fields() {
-        let st = St::new(vec![0x00, 0x00, 0x00]);
+        let st = StSection::new(vec![0x00, 0x00, 0x00]);
         let mut buf = vec![0u8; st.serialized_len()];
         st.serialize_into(&mut buf).unwrap();
-        let re = St::parse(&buf).unwrap();
+        let re = StSection::parse(&buf).unwrap();
         assert_eq!(st, re);
     }
 
     #[test]
     fn round_trip_empty() {
-        let st = St::new(vec![]);
+        let st = StSection::new(vec![]);
         let mut buf = vec![0u8; st.serialized_len()];
         st.serialize_into(&mut buf).unwrap();
-        let re = St::parse(&buf).unwrap();
+        let re = StSection::parse(&buf).unwrap();
         assert_eq!(st, re);
     }
 
     #[test]
     fn round_trip_many_stuffs() {
-        let st = St::new(vec![0x00; 185]);
+        let st = StSection::new(vec![0x00; 185]);
         let mut buf = vec![0u8; st.serialized_len()];
         st.serialize_into(&mut buf).unwrap();
-        let re = St::parse(&buf).unwrap();
+        let re = StSection::parse(&buf).unwrap();
         assert_eq!(st, re);
     }
 
@@ -226,7 +226,7 @@ mod tests {
     fn parse_rejects_buffer_too_short() {
         let bytes = [0x72, 0x70]; // only 2 bytes
         assert!(matches!(
-            St::parse(&bytes).unwrap_err(),
+            StSection::parse(&bytes).unwrap_err(),
             Error::BufferTooShort { need: 3, .. }
         ));
     }
@@ -236,9 +236,9 @@ mod tests {
         // section_length = 10 but only 2 payload bytes available after header
         let bytes = [0x72, 0x70, 10, 0x00, 0x00];
         assert!(matches!(
-            St::parse(&bytes).unwrap_err(),
+            StSection::parse(&bytes).unwrap_err(),
             Error::BufferTooShort {
-                what: "St payload",
+                what: "StSection payload",
                 ..
             }
         ));
@@ -246,19 +246,19 @@ mod tests {
 
     #[test]
     fn table_trait_constants() {
-        assert_eq!(<St as Table>::TABLE_ID, 0x72);
-        assert_eq!(<St as Table>::PID, 0x0014);
+        assert_eq!(<StSection as Table>::TABLE_ID, 0x72);
+        assert_eq!(<StSection as Table>::PID, 0x0014);
     }
 
     #[test]
     fn serialized_len_matches_wire_size() {
-        let st = St::new(vec![0x00; 50]);
+        let st = StSection::new(vec![0x00; 50]);
         assert_eq!(st.serialized_len(), HEADER_LEN + 50);
     }
 
     #[test]
     fn to_bytes_produces_valid_section() {
-        let st = St::new(vec![0x00, 0x00]);
+        let st = StSection::new(vec![0x00, 0x00]);
         let bytes = st.to_bytes();
         assert_eq!(bytes[0], TABLE_ID);
         assert_eq!(bytes.len(), st.serialized_len());
@@ -266,18 +266,18 @@ mod tests {
 
     #[test]
     fn len_and_is_empty() {
-        let empty = St::new(vec![]);
+        let empty = StSection::new(vec![]);
         assert!(empty.is_empty());
         assert_eq!(empty.len(), 0);
 
-        let filled = St::new(vec![0x00; 10]);
+        let filled = StSection::new(vec![0x00; 10]);
         assert!(!filled.is_empty());
         assert_eq!(filled.len(), 10);
     }
 
     #[test]
     fn new_constructor() {
-        let st = St::new(vec![0x00]);
+        let st = StSection::new(vec![0x00]);
         assert_eq!(st.len(), 1);
     }
 }

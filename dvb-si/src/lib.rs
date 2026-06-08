@@ -1,20 +1,22 @@
 //! ETSI EN 300 468 v1.19.1 DVB Service Information parser and builder.
 //!
-//! `dvb-si` turns a raw MPEG-TS into typed, decoded DVB tables: feed packets in,
-//! get back PAT/PMT/SDT/EIT/… structs whose text fields decode to UTF-8 and
+//! `dvb-si` turns a raw MPEG-TS into typed, decoded DVB sections and complete
+//! logical tables: feed packets in, get back PAT/PMT/SDT/EIT/… section structs
+//! whose text fields decode to UTF-8 and
 //! whose descriptor loops walk into typed descriptors. Every layout is cited to
 //! the ETSI spec and round-trip tested; the same types serialize back to bytes.
 //!
 //! # 30-second quickstart
 //!
-//! Build a [`demux::SiDemux`], feed it TS packets, match on [`tables::AnyTable`],
-//! walk the descriptor loop with [`descriptors::DescriptorLoop::iter`], and print
-//! decoded text via [`text::DvbText::decode`]:
+//! Build a [`demux::SiDemux`], feed it TS packets, match on
+//! [`tables::AnyTableSection`], walk the descriptor loop with
+//! [`descriptors::DescriptorLoop::iter`], and print decoded text via
+//! [`text::DvbText::decode`]:
 //!
 //! ```
 //! use dvb_si::demux::SiDemux;
 //! use dvb_si::descriptors::AnyDescriptor;
-//! use dvb_si::tables::AnyTable;
+//! use dvb_si::tables::AnyTableSection;
 //!
 //! let mut demux = SiDemux::builder().build();
 //!
@@ -23,8 +25,8 @@
 //! // self-contained — see `examples/si_dump.rs` for the file-reading loop.
 //! # let packet = build_pat_packet();
 //! for event in demux.feed(&packet) {
-//!     match event.table() {
-//!         Ok(AnyTable::Sdt(sdt)) => {
+//!     match event.table_section() {
+//!         Ok(AnyTableSection::SdtSection(sdt)) => {
 //!             for service in &sdt.services {
 //!                 for item in service.descriptors.iter().flatten() {
 //!                     if let AnyDescriptor::Service(svc) = item {
@@ -34,7 +36,7 @@
 //!                 }
 //!             }
 //!         }
-//!         Ok(AnyTable::Pat(pat)) => {
+//!         Ok(AnyTableSection::PatSection(pat)) => {
 //!             println!("PAT v{} on {}", event.version().unwrap_or(0), event.pid());
 //!             assert_eq!(pat.entries.len(), 1);
 //!         }
@@ -46,16 +48,27 @@
 //! # // Minimal PAT-in-a-TS-packet builder used by the doctest above.
 //! # fn build_pat_packet() -> [u8; 188] {
 //! #     use dvb_common::Serialize;
-//! #     use dvb_si::tables::pat::{Pat, PatEntry};
-//! #     let pat = Pat {
+//! #     use dvb_si::tables::pat::{PatSection, PatEntry};
+//! #     const PMT_PID: u16 = 0x0100;
+//! #     let pat = PatSection {
 //! #         transport_stream_id: 1, version_number: 0, current_next_indicator: true,
 //! #         section_number: 0, last_section_number: 0,
-//! #         entries: vec![PatEntry { program_number: 1, pid: 0x0100 }],
+//! #         entries: vec![PatEntry { program_number: 1, pid: PMT_PID }],
 //! #     };
 //! #     let mut section = vec![0u8; pat.serialized_len()];
 //! #     pat.serialize_into(&mut section).unwrap();
-//! #     let mut pkt = [0xFFu8; 188];
-//! #     pkt[0] = 0x47; pkt[1] = 0x40; pkt[2] = 0x00; pkt[3] = 0x10; pkt[4] = 0x00;
+//! #     const TS_SYNC_BYTE: u8 = 0x47;
+//! #     const PAYLOAD_UNIT_START_INDICATOR: u8 = 0x40;
+//! #     const PID_LOW_BYTE: u8 = 0x00;
+//! #     const PAYLOAD_ONLY: u8 = 0x10;
+//! #     const POINTER_FIELD_START: u8 = 0x00;
+//! #     const STUFFING_BYTE: u8 = 0xFF;
+//! #     let mut pkt = [STUFFING_BYTE; 188];
+//! #     pkt[0] = TS_SYNC_BYTE;
+//! #     pkt[1] = PAYLOAD_UNIT_START_INDICATOR;
+//! #     pkt[2] = PID_LOW_BYTE;
+//! #     pkt[3] = PAYLOAD_ONLY;
+//! #     pkt[4] = POINTER_FIELD_START;
 //! #     pkt[5..5 + section.len()].copy_from_slice(&section);
 //! #     pkt
 //! # }
@@ -65,20 +78,27 @@
 //!
 //! ```text
 //! TS packets ─▶ demux::SiDemux ─▶ SectionEvent
-//!                                    │ .table()
+//!                                    │ .table_section()
 //!                                    ▼
-//!                              tables::AnyTable  (PAT, PMT, SDT, EIT, …)
-//!                                    │ table.<loop field> : &[u8]
+//!                              tables::AnyTableSection  (PatSection, SdtSection, …)
+//!                                    │ section.<loop field> : DescriptorLoop
 //!                                    ▼
 //!                          descriptors::parse_loop ─▶ AnyDescriptor
 //!                                    │ field : DvbText / LangCode
 //!                                    ▼
 //!                              text::DvbText::decode() ─▶ UTF-8 String
+//!
+//! SectionEvent.bytes() ─▶ collect::SectionSetCollector ─▶ CompleteSectionSet
+//!                                                        │ .table::<T>()
+//!                                                        ├ .nit() / .bat() / .sdt() / .eit()
+//!                                                        ▼
+//!                                                  complete logical tables
 //! ```
 //!
 //! Each layer is independently usable: a caller who already has complete section
-//! bytes can skip [`demux`] and call [`tables::AnyTable::parse`] directly; a
+//! bytes can skip [`demux`] and call [`tables::AnyTableSection::parse`] directly; a
 //! caller with a bare descriptor loop can call [`descriptors::parse_loop`] on it.
+//! Use [`collect`] when a table spans multiple sections.
 //!
 //! # Features
 //!
@@ -87,25 +107,29 @@
 //! | `chrono` | on | MJD + BCD time fields decode to `chrono::DateTime<Utc>` (EIT `start_time()`, TDT/TOT). Off → raw bytes. |
 //! | `ts` | on | [`demux::SiDemux`], [`ts::SectionReassembler`], TS packet parsing. Off → bring your own complete section bytes. |
 //! | `serde` | on | **Serialize-only** — for display/export (JSON via serde_json); parsing FROM JSON is deliberately unsupported, re-parse from wire bytes. `Serialize` on every table/descriptor; [`text::DvbText`] serializes as its **decoded** UTF-8 string (camelCase JSON). |
-//! | `yoke` | off | [`yoke::Yokeable`] on every zero-copy view type + the [`owned::Owned`] wrapper — own a parsed view past the input buffer's borrow (store/cache/send across threads) without re-parsing or a mirror type. |
+//! | `yoke` | off | `yoke::Yokeable` on every zero-copy view type + the `owned::Owned` wrapper — own a parsed view past the input buffer's borrow (store/cache/send across threads) without re-parsing or a mirror type. |
 //!
 //! ```toml
-//! dvb-si = { version = "3.1", default-features = false }  # tight, no_std-ish build
+//! dvb-si = { version = "4.0", default-features = false }  # tight, no_std-ish build
 //! ```
 //!
 //! # Entry points
 //!
 //! - [`demux::SiDemux`] — PID-filtered, version-gated section pump (feature `ts`).
-//! - [`tables::AnyTable`] / [`descriptors::AnyDescriptor`] — trait-driven dispatch
-//!   on table_id / descriptor_tag; [`descriptors::parse_loop`] walks a loop lazily.
+//! - [`tables::AnyTableSection`] / [`descriptors::AnyDescriptor`] — trait-driven
+//!   dispatch on table_id / descriptor_tag; [`descriptors::parse_loop`] walks a
+//!   loop lazily.
+//! - [`collect`] — generic multi-section collection plus complete NIT/BAT/SDT/EIT
+//!   views with typed descriptor loops.
 //! - [`descriptors::DescriptorRegistry`] — register private descriptors at runtime.
 //! - [`text::DvbText`] / [`text::LangCode`] — decoded-on-demand Annex A text.
 //! - [`Parse`](dvb_common::Parse) / [`Serialize`](dvb_common::Serialize) — the two
 //!   symmetric contracts every table and descriptor implements.
-//! - [`tables`] — PAT, PMT, CAT, TSDT, NIT, BAT, SDT, EIT, TDT, TOT, RST, DIT, SIT,
-//!   ST, SAT, AIT, DSM-CC section, UNT, INT, RCT, CIT, RNT, Container, MPE
-//!   datagram, MPE-FEC, MPE-IFEC, protection message, downloadable font info —
-//!   every allocated table_id in EN 300 468 V1.19.1 Table 2.
+//! - [`tables`] — `*Section` parsers for PAT, PMT, CAT, TSDT, NIT, BAT, SDT,
+//!   EIT, TDT, TOT, RST, DIT, SIT, ST, SAT, AIT, DSM-CC section, UNT, INT, RCT,
+//!   CIT, RNT, Container, MPE datagram, MPE-FEC, MPE-IFEC, protection message,
+//!   downloadable font info — every allocated table_id in EN 300 468 V1.19.1
+//!   Table 2.
 //! - [`descriptors`] — every DVB descriptor (tags 0x40..0x7F) plus MPEG-2 descriptors.
 //! - [`carousel`] — DSM-CC data-carousel messages (DSI/DII/DDB) + module
 //!   reassembly on top of the [`tables::dsmcc`] section framing.
@@ -113,12 +137,13 @@
 //! - [`table_id::TableId`] — typed table_id enum.
 //! - [`descriptor_tag::DescriptorTag`] — typed descriptor_tag enum.
 //!
-//! See the crate README and `docs/` for the structured spec reference, and
-//! `MIGRATION-2.0.md` for the 1.x → 2.0 upgrade guide.
+//! See the crate README and `docs/` for the structured spec reference.
+//! `MIGRATION-4.0.md` covers the 3.x → 4.0 API break.
 
 #![warn(missing_docs)]
 
 pub mod carousel;
+pub mod collect;
 pub mod descriptor_tag;
 pub mod descriptors;
 pub mod error;

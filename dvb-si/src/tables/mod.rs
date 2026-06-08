@@ -1,10 +1,11 @@
-//! SI + PSI tables.
+//! SI + PSI table-section parsers.
 //!
-//! Tables live in submodules: one file per table or per SAT variant.
-//! Submodules land incrementally as phases complete.
+//! Each `*Section` type parses and serializes one wire section. Use
+//! [`crate::collect`] to assemble complete logical tables that span multiple
+//! sections.
 
 pub mod any;
-pub use any::AnyTable;
+pub use any::AnyTableSection;
 
 pub mod ait;
 pub mod bat;

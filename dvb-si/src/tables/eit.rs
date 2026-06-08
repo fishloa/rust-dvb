@@ -36,7 +36,7 @@ const CRC_LEN: usize = 4;
 const EVENT_HEADER_LEN: usize = 12;
 
 /// EIT variant distinguished by table_id range.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum EitKind {
     /// Present/Following, actual TS.
@@ -91,7 +91,7 @@ pub struct EitEvent<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
-pub struct Eit<'a> {
+pub struct EitSection<'a> {
     /// Variant based on table_id.
     pub kind: EitKind,
     /// Raw table_id byte as parsed (for schedule sub-tables, identifies the slot).
@@ -118,7 +118,7 @@ pub struct Eit<'a> {
     pub events: Vec<EitEvent<'a>>,
 }
 
-impl<'a> Parse<'a> for Eit<'a> {
+impl<'a> Parse<'a> for EitSection<'a> {
     type Error = crate::error::Error;
     fn parse(bytes: &'a [u8]) -> Result<Self> {
         let min_len = MIN_HEADER_LEN + EXTENSION_HEADER_LEN + POST_EXTENSION_LEN + CRC_LEN;
@@ -126,14 +126,14 @@ impl<'a> Parse<'a> for Eit<'a> {
             return Err(Error::BufferTooShort {
                 need: min_len,
                 have: bytes.len(),
-                what: "Eit",
+                what: "EitSection",
             });
         }
 
         let table_id = bytes[0];
         let kind = EitKind::from_table_id(table_id).ok_or(Error::UnexpectedTableId {
             table_id,
-            what: "Eit",
+            what: "EitSection",
             expected: &[
                 TABLE_ID_PF_ACTUAL,
                 TABLE_ID_PF_OTHER,
@@ -200,7 +200,7 @@ impl<'a> Parse<'a> for Eit<'a> {
             pos = desc_end;
         }
 
-        Ok(Eit {
+        Ok(EitSection {
             kind,
             table_id,
             service_id,
@@ -217,7 +217,7 @@ impl<'a> Parse<'a> for Eit<'a> {
     }
 }
 
-impl Serialize for Eit<'_> {
+impl Serialize for EitSection<'_> {
     type Error = crate::error::Error;
     fn serialized_len(&self) -> usize {
         let ev_bytes: usize = self
@@ -272,12 +272,12 @@ impl Serialize for Eit<'_> {
     }
 }
 
-impl<'a> Table<'a> for Eit<'a> {
+impl<'a> Table<'a> for EitSection<'a> {
     const TABLE_ID: u8 = TABLE_ID_PF_ACTUAL;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Eit<'a> {
+impl<'a> crate::traits::TableDef<'a> for EitSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] =
         &[(TABLE_ID_PF_ACTUAL, TABLE_ID_SCHEDULE_OTHER_LAST)];
     const NAME: &'static str = "EVENT_INFORMATION";
@@ -382,7 +382,7 @@ mod tests {
             (TABLE_ID_PF_OTHER, EitKind::PresentFollowingOther),
         ] {
             let bytes = build_eit(tid, 1, 0, 0x20, 0x30, &[]);
-            assert_eq!(Eit::parse(&bytes).unwrap().kind, expected);
+            assert_eq!(EitSection::parse(&bytes).unwrap().kind, expected);
         }
     }
 
@@ -390,7 +390,10 @@ mod tests {
     fn schedule_tables_0x50_through_0x5f_all_decode_as_schedule_actual() {
         for tid in TABLE_ID_SCHEDULE_ACTUAL_FIRST..=TABLE_ID_SCHEDULE_ACTUAL_LAST {
             let bytes = build_eit(tid, 1, 0, 0x20, 0x30, &[]);
-            assert_eq!(Eit::parse(&bytes).unwrap().kind, EitKind::ScheduleActual);
+            assert_eq!(
+                EitSection::parse(&bytes).unwrap().kind,
+                EitKind::ScheduleActual
+            );
         }
     }
 
@@ -398,7 +401,10 @@ mod tests {
     fn schedule_tables_0x60_through_0x6f_all_decode_as_schedule_other() {
         for tid in TABLE_ID_SCHEDULE_OTHER_FIRST..=TABLE_ID_SCHEDULE_OTHER_LAST {
             let bytes = build_eit(tid, 1, 0, 0x20, 0x30, &[]);
-            assert_eq!(Eit::parse(&bytes).unwrap().kind, EitKind::ScheduleOther);
+            assert_eq!(
+                EitSection::parse(&bytes).unwrap().kind,
+                EitKind::ScheduleOther
+            );
         }
     }
 
@@ -420,7 +426,7 @@ mod tests {
                 desc.clone(),
             )],
         );
-        let eit = Eit::parse(&bytes).unwrap();
+        let eit = EitSection::parse(&bytes).unwrap();
         assert_eq!(eit.events.len(), 1);
         assert_eq!(eit.events[0].event_id, 42);
         assert_eq!(eit.events[0].descriptors.raw(), &desc[..]);
@@ -436,7 +442,10 @@ mod tests {
             0x30,
             &[(1, [0; 5], [0; 3], 2, false, vec![])],
         );
-        assert_eq!(Eit::parse(&bytes).unwrap().events[0].running_status, 2);
+        assert_eq!(
+            EitSection::parse(&bytes).unwrap().events[0].running_status,
+            2
+        );
     }
 
     #[test]
@@ -449,13 +458,13 @@ mod tests {
             0x30,
             &[(1, [0; 5], [0; 3], 0, true, vec![])],
         );
-        assert!(Eit::parse(&bytes).unwrap().events[0].free_ca_mode);
+        assert!(EitSection::parse(&bytes).unwrap().events[0].free_ca_mode);
     }
 
     #[test]
     fn serialize_round_trip_preserves_all_events() {
         let desc1: [u8; 2] = [0x54, 0x00];
-        let eit = Eit {
+        let eit = EitSection {
             kind: EitKind::PresentFollowingActual,
             table_id: TABLE_ID_PF_ACTUAL,
             service_id: 0x0100,
@@ -488,14 +497,14 @@ mod tests {
         };
         let mut buf = vec![0u8; eit.serialized_len()];
         eit.serialize_into(&mut buf).unwrap();
-        let re = Eit::parse(&buf).unwrap();
+        let re = EitSection::parse(&buf).unwrap();
         assert_eq!(eit, re);
     }
 
     #[test]
     fn zero_events_is_valid() {
         let bytes = build_eit(TABLE_ID_PF_ACTUAL, 1, 0, 0x20, 0x30, &[]);
-        let eit = Eit::parse(&bytes).unwrap();
+        let eit = EitSection::parse(&bytes).unwrap();
         assert_eq!(eit.events.len(), 0);
     }
 

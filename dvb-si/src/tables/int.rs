@@ -92,7 +92,7 @@ const OFF_PLATFORM_DESC_LEN: usize = 12;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
-pub struct Int<'a> {
+pub struct IntSection<'a> {
     /// Semantics of this INT announcement — 0x01 = stream announcement/location.
     pub action_type: u8,
 
@@ -140,7 +140,7 @@ pub struct Int<'a> {
 
 // ── Parse ────────────────────────────────────────────────────────────────────
 
-impl<'a> Parse<'a> for Int<'a> {
+impl<'a> Parse<'a> for IntSection<'a> {
     type Error = crate::error::Error;
 
     fn parse(bytes: &'a [u8]) -> Result<Self> {
@@ -149,7 +149,7 @@ impl<'a> Parse<'a> for Int<'a> {
             return Err(Error::BufferTooShort {
                 need: MIN_SECTION_LEN,
                 have: bytes.len(),
-                what: "Int",
+                what: "IntSection",
             });
         }
 
@@ -157,7 +157,7 @@ impl<'a> Parse<'a> for Int<'a> {
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "Int",
+                what: "IntSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -208,7 +208,7 @@ impl<'a> Parse<'a> for Int<'a> {
         let loops_end = total - CRC_LEN;
         let loops = &bytes[loops_start..loops_end];
 
-        Ok(Int {
+        Ok(IntSection {
             action_type,
             platform_id_hash,
             version_number,
@@ -225,7 +225,7 @@ impl<'a> Parse<'a> for Int<'a> {
 
 // ── Serialize ─────────────────────────────────────────────────────────────────
 
-impl Serialize for Int<'_> {
+impl Serialize for IntSection<'_> {
     type Error = crate::error::Error;
 
     fn serialized_len(&self) -> usize {
@@ -292,12 +292,12 @@ impl Serialize for Int<'_> {
 
 // ── Table trait ──────────────────────────────────────────────────────────────
 
-impl<'a> Table<'a> for Int<'a> {
+impl<'a> Table<'a> for IntSection<'a> {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Int<'a> {
+impl<'a> crate::traits::TableDef<'a> for IntSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "IP_MAC_NOTIFICATION";
 }
@@ -326,7 +326,7 @@ mod tests {
         platform_desc: &[u8],
         loops: &[u8],
     ) -> Vec<u8> {
-        let int = Int {
+        let int = IntSection {
             action_type,
             platform_id_hash,
             version_number,
@@ -359,7 +359,7 @@ mod tests {
             /* platform_desc = */ &[0x81, 0x02, 0xAB, 0xCD],
             /* loops = */ &[],
         );
-        let int = Int::parse(&bytes).unwrap();
+        let int = IntSection::parse(&bytes).unwrap();
 
         assert_eq!(int.action_type, ACTION_TYPE_STREAM_ANNOUNCEMENT);
         assert_eq!(int.platform_id_hash, 0x12 ^ 0x34);
@@ -396,7 +396,7 @@ mod tests {
             &[],
             &fake_loops,
         );
-        let int = Int::parse(&bytes).unwrap();
+        let int = IntSection::parse(&bytes).unwrap();
         assert_eq!(int.platform_id, 0x00_56_78);
         assert_eq!(int.version_number, 5);
         assert!(!int.current_next_indicator);
@@ -407,7 +407,7 @@ mod tests {
     fn parse_rejects_wrong_table_id() {
         let mut bytes = build_int(0x01, 0x00, 0, true, 0, 0, 0x000001, 0x00, &[], &[]);
         bytes[0] = 0x4B; // wrong table_id
-        let err = Int::parse(&bytes).unwrap_err();
+        let err = IntSection::parse(&bytes).unwrap_err();
         assert!(matches!(
             err,
             Error::UnexpectedTableId { table_id: 0x4B, .. }
@@ -416,8 +416,14 @@ mod tests {
 
     #[test]
     fn parse_rejects_buffer_too_short() {
-        let err = Int::parse(&[TABLE_ID, 0xF0]).unwrap_err();
-        assert!(matches!(err, Error::BufferTooShort { what: "Int", .. }));
+        let err = IntSection::parse(&[TABLE_ID, 0xF0]).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::BufferTooShort {
+                what: "IntSection",
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -437,14 +443,14 @@ mod tests {
             &fake_loops,
         );
 
-        let int = Int::parse(&bytes).unwrap();
+        let int = IntSection::parse(&bytes).unwrap();
 
         // Re-serialize.
         let mut buf = vec![0u8; int.serialized_len()];
         int.serialize_into(&mut buf).unwrap();
 
         // Parse again.
-        let re = Int::parse(&buf).unwrap();
+        let re = IntSection::parse(&buf).unwrap();
 
         assert_eq!(int, re);
         assert_eq!(re.action_type, ACTION_TYPE_STREAM_ANNOUNCEMENT);
@@ -461,7 +467,7 @@ mod tests {
 
     #[test]
     fn serialize_rejects_too_small_output_buffer() {
-        let int = Int {
+        let int = IntSection {
             action_type: 0x01,
             platform_id_hash: 0x00,
             version_number: 0,
@@ -482,7 +488,7 @@ mod tests {
     fn platform_id_24bit_boundary() {
         // Verify max 24-bit value survives a round-trip without high-byte bleed.
         let bytes = build_int(0x01, 0xFF, 0, true, 0, 0, 0x00FF_FFFF, 0x00, &[], &[]);
-        let int = Int::parse(&bytes).unwrap();
+        let int = IntSection::parse(&bytes).unwrap();
         assert_eq!(int.platform_id, 0x00FF_FFFF);
     }
 }

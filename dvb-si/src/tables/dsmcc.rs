@@ -141,7 +141,7 @@ impl<'a> Table<'a> for DsmccSection<'a> {
 impl<'a> crate::traits::TableDef<'a> for DsmccSection<'a> {
     /// Full DSM-CC range including `0x3E` (MPE datagram_section). The typed
     /// [`crate::tables::mpe::MpeDatagramSection`] view of `0x3E` is reachable
-    /// type-keyed only (via `AnyTable::parse_as` or
+    /// type-keyed only (via `AnyTableSection::parse_as` or
     /// `MpeDatagramSection::parse`); the default dispatcher routes `0x3E` here.
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID_FIRST, TABLE_ID_LAST)];
     const NAME: &'static str = "DSM_CC_SECTION";

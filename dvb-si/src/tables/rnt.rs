@@ -39,7 +39,7 @@ const MIN_LEN: usize = HEADER_LEN + EXTENSION_HEADER_LEN + COMMON_DESC_LEN_FIELD
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
-pub struct Rnt<'a> {
+pub struct RntSection<'a> {
     /// 16-bit context identifier (table_id_extension at bytes 3–4).
     pub context_id: u16,
     /// 5-bit version_number.
@@ -61,7 +61,7 @@ pub struct Rnt<'a> {
     pub resolution_providers: &'a [u8],
 }
 
-impl<'a> Parse<'a> for Rnt<'a> {
+impl<'a> Parse<'a> for RntSection<'a> {
     type Error = crate::error::Error;
 
     fn parse(bytes: &'a [u8]) -> Result<Self> {
@@ -69,14 +69,14 @@ impl<'a> Parse<'a> for Rnt<'a> {
             return Err(Error::BufferTooShort {
                 need: MIN_LEN,
                 have: bytes.len(),
-                what: "Rnt",
+                what: "RntSection",
             });
         }
 
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "Rnt",
+                what: "RntSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -128,7 +128,7 @@ impl<'a> Parse<'a> for Rnt<'a> {
         let rp_end = total - CRC_LEN;
         let resolution_providers = &bytes[rp_start..rp_end];
 
-        Ok(Rnt {
+        Ok(RntSection {
             context_id,
             version_number,
             current_next_indicator,
@@ -141,7 +141,7 @@ impl<'a> Parse<'a> for Rnt<'a> {
     }
 }
 
-impl Serialize for Rnt<'_> {
+impl Serialize for RntSection<'_> {
     type Error = crate::error::Error;
 
     fn serialized_len(&self) -> usize {
@@ -200,12 +200,12 @@ impl Serialize for Rnt<'_> {
     }
 }
 
-impl<'a> Table<'a> for Rnt<'a> {
+impl<'a> Table<'a> for RntSection<'a> {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Rnt<'a> {
+impl<'a> crate::traits::TableDef<'a> for RntSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "RELATED_AND_NEIGHBOURING";
 }
@@ -228,7 +228,7 @@ mod tests {
         common_desc: &[u8],
         resolution_providers: &[u8],
     ) -> Vec<u8> {
-        let rnt = Rnt {
+        let rnt = RntSection {
             context_id,
             version_number: version,
             current_next_indicator: current_next,
@@ -253,7 +253,7 @@ mod tests {
         let rp_bytes = [0xF0u8, 0x00, 0x02, b'b', b'b', 0xF0, 0x00];
         let bytes = build_rnt(0x0042, 3, true, 0, 0, 0x01, &common_desc, &rp_bytes);
 
-        let rnt = Rnt::parse(&bytes).unwrap();
+        let rnt = RntSection::parse(&bytes).unwrap();
         assert_eq!(rnt.context_id, 0x0042);
         assert_eq!(rnt.version_number, 3);
         assert!(rnt.current_next_indicator);
@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn parse_no_descriptors_no_providers() {
         let bytes = build_rnt(0x0000, 0, false, 0, 0, 0x00, &[], &[]);
-        let rnt = Rnt::parse(&bytes).unwrap();
+        let rnt = RntSection::parse(&bytes).unwrap();
         assert_eq!(rnt.common_descriptors.len(), 0);
         assert_eq!(rnt.resolution_providers.len(), 0);
     }
@@ -276,7 +276,7 @@ mod tests {
     fn parse_rejects_wrong_table_id() {
         let mut bytes = build_rnt(0x0001, 0, true, 0, 0, 0x00, &[], &[]);
         bytes[0] = 0x70; // not 0x79
-        let err = Rnt::parse(&bytes).unwrap_err();
+        let err = RntSection::parse(&bytes).unwrap_err();
         assert!(matches!(
             err,
             Error::UnexpectedTableId { table_id: 0x70, .. }
@@ -285,7 +285,7 @@ mod tests {
 
     #[test]
     fn parse_rejects_short_buffer() {
-        let err = Rnt::parse(&[0x79, 0x00]).unwrap_err();
+        let err = RntSection::parse(&[0x79, 0x00]).unwrap_err();
         assert!(matches!(err, Error::BufferTooShort { .. }));
     }
 
@@ -295,7 +295,7 @@ mod tests {
         // Minimal resolution-provider entry: 2-byte length header (0 bytes length),
         // 1-byte name length (0), 2-byte provider descriptors length (0).
         let rp_bytes = [0xF0u8, 0x03, 0x00, 0xF0, 0x00];
-        let rnt = Rnt {
+        let rnt = RntSection {
             context_id: 0xABCD,
             version_number: 15,
             current_next_indicator: true,
@@ -308,13 +308,13 @@ mod tests {
 
         let mut buf = vec![0u8; rnt.serialized_len()];
         rnt.serialize_into(&mut buf).unwrap();
-        let parsed = Rnt::parse(&buf).unwrap();
+        let parsed = RntSection::parse(&buf).unwrap();
         assert_eq!(rnt, parsed);
     }
 
     #[test]
     fn serialize_rejects_too_small_buffer() {
-        let rnt = Rnt {
+        let rnt = RntSection {
             context_id: 0x0001,
             version_number: 0,
             current_next_indicator: true,

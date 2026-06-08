@@ -8,39 +8,47 @@
 //! carousel of unchanging tables produces no events after the first.
 //!
 //! Events own their bytes ([`bytes::Bytes`]) and are therefore `'static` and
-//! cheap to clone; typed views ([`SectionEvent::table`],
+//! cheap to clone; typed views ([`SectionEvent::table_section`],
 //! [`SectionEvent::parse`]) borrow the event lazily.
 //!
 //! ```
 //! use dvb_common::Serialize;
 //! use dvb_si::demux::SiDemux;
-//! use dvb_si::tables::AnyTable;
-//! use dvb_si::tables::pat::{Pat, PatEntry};
+//! use dvb_si::tables::AnyTableSection;
+//! use dvb_si::tables::pat::{PatSection, PatEntry};
+//!
+//! const PMT_PID: u16 = 0x0100;
+//! const TS_SYNC_BYTE: u8 = 0x47;
+//! const PAYLOAD_UNIT_START_INDICATOR: u8 = 0x40;
+//! const PAT_PID_LOW_BYTE: u8 = 0x00;
+//! const PAYLOAD_ONLY: u8 = 0x10;
+//! const POINTER_FIELD_START: u8 = 0x00;
+//! const STUFFING_BYTE: u8 = 0xFF;
 //!
 //! // Build one PAT section and wrap it in a single 188-byte TS packet so the
 //! // example is self-contained. In real code `packet` comes from your source.
-//! let pat = Pat {
+//! let pat = PatSection {
 //!     transport_stream_id: 1, version_number: 0, current_next_indicator: true,
 //!     section_number: 0, last_section_number: 0,
-//!     entries: vec![PatEntry { program_number: 1, pid: 0x0100 }],
+//!     entries: vec![PatEntry { program_number: 1, pid: PMT_PID }],
 //! };
 //! let mut section = vec![0u8; pat.serialized_len()];
 //! pat.serialize_into(&mut section).unwrap();
-//! let mut packet = [0xFFu8; 188];
-//! packet[0] = 0x47;  // sync
-//! packet[1] = 0x40;  // PUSI=1, PID hi=0
-//! packet[2] = 0x00;  // PID lo=0 (PAT)
-//! packet[3] = 0x10;  // payload only
-//! packet[4] = 0x00;  // pointer_field
+//! let mut packet = [STUFFING_BYTE; 188];
+//! packet[0] = TS_SYNC_BYTE;
+//! packet[1] = PAYLOAD_UNIT_START_INDICATOR;
+//! packet[2] = PAT_PID_LOW_BYTE;
+//! packet[3] = PAYLOAD_ONLY;
+//! packet[4] = POINTER_FIELD_START;
 //! packet[5..5 + section.len()].copy_from_slice(&section);
 //!
 //! let mut demux = SiDemux::builder().build();
 //! let events: Vec<_> = demux.feed(&packet).collect();
 //! assert_eq!(events.len(), 1);
-//! match events[0].table() {
-//!     Ok(AnyTable::Pat(pat)) => {
+//! match events[0].table_section() {
+//!     Ok(AnyTableSection::PatSection(pat)) => {
 //!         println!("PAT v{} on {}", events[0].version().unwrap_or(0), events[0].pid());
-//!         assert_eq!(pat.entries[0].pid, 0x0100);
+//!         assert_eq!(pat.entries[0].pid, PMT_PID);
 //!     }
 //!     other => panic!("expected PAT, got {other:?}"),
 //! }
@@ -164,15 +172,15 @@ impl SectionEvent {
         true
     }
 
-    /// Typed view (lazy, borrows this event's bytes).
+    /// Typed table-section view (lazy, borrows this event's bytes).
     ///
     /// # Errors
-    /// Propagates the parse error from the dispatched table type.
-    pub fn table(&self) -> crate::Result<crate::tables::AnyTable<'_>> {
-        crate::tables::AnyTable::parse(&self.bytes)
+    /// Propagates the parse error from the dispatched table-section type.
+    pub fn table_section(&self) -> crate::Result<crate::tables::AnyTableSection<'_>> {
+        crate::tables::AnyTableSection::parse(&self.bytes)
     }
 
-    /// Type-keyed view: `event.parse::<Eit>()`.
+    /// Type-keyed view: `event.parse::<EitSection>()`.
     ///
     /// # Errors
     /// Propagates `T::parse` errors.
@@ -488,9 +496,9 @@ impl SiDemux {
     /// reassembler. Parse failures are silently ignored — a malformed PAT that
     /// nonetheless passed CRC is implausible, and we never panic.
     fn follow_pat(&mut self, event: &SectionEvent) {
-        use crate::tables::pat::Pat;
+        use crate::tables::pat::PatSection;
         use dvb_common::Parse;
-        if let Ok(pat) = Pat::parse(&event.bytes) {
+        if let Ok(pat) = PatSection::parse(&event.bytes) {
             for entry in &pat.entries {
                 if entry.program_number != 0 {
                     self.pids.entry(Pid::new(entry.pid)).or_default();
@@ -611,7 +619,7 @@ mod tests {
 
     #[test]
     fn follow_pat_registers_pmt_pid_and_emits_typed_pmt() {
-        use crate::tables::AnyTable;
+        use crate::tables::AnyTableSection;
         let mut demux = SiDemux::builder().build();
 
         // PAT maps programme 1 -> PMT on PID 0x0100.
@@ -625,9 +633,9 @@ mod tests {
         let pmt_evts: Vec<_> = demux.feed(&ts_packet(0x0100, &pmt)).collect();
         assert_eq!(pmt_evts.len(), 1, "PMT on the followed PID should emit");
         assert_eq!(pmt_evts[0].pid(), Pid::new(0x0100));
-        match pmt_evts[0].table().unwrap() {
-            AnyTable::Pmt(p) => assert_eq!(p.program_number, 1),
-            other => panic!("expected Pmt, got {other:?}"),
+        match pmt_evts[0].table_section().unwrap() {
+            AnyTableSection::PmtSection(p) => assert_eq!(p.program_number, 1),
+            other => panic!("expected PmtSection, got {other:?}"),
         }
     }
 

@@ -64,7 +64,7 @@ const MIN_SECTION_LEN: usize =
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
-pub struct Rct<'a> {
+pub struct RctSection<'a> {
     /// `table_id_extension_flag` (bit 6 of byte 1).
     ///
     /// `false`: `service_id` identifies the service this sub-table belongs to.
@@ -111,7 +111,7 @@ pub struct Rct<'a> {
 
 // ── Parse ────────────────────────────────────────────────────────────────────
 
-impl<'a> Parse<'a> for Rct<'a> {
+impl<'a> Parse<'a> for RctSection<'a> {
     type Error = crate::error::Error;
 
     fn parse(bytes: &'a [u8]) -> Result<Self> {
@@ -119,14 +119,14 @@ impl<'a> Parse<'a> for Rct<'a> {
             return Err(Error::BufferTooShort {
                 need: MIN_SECTION_LEN,
                 have: bytes.len(),
-                what: "Rct",
+                what: "RctSection",
             });
         }
 
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "Rct",
+                what: "RctSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -174,7 +174,7 @@ impl<'a> Parse<'a> for Rct<'a> {
                 return Err(Error::BufferTooShort {
                     need: pos + LINK_ENTRY_HEADER_LEN,
                     have: payload_end,
-                    what: "Rct link_entry header",
+                    what: "RctSection link_entry header",
                 });
             }
             let link_info_length = (((bytes[pos] & 0x0F) as usize) << 8) | bytes[pos + 1] as usize;
@@ -196,7 +196,7 @@ impl<'a> Parse<'a> for Rct<'a> {
             return Err(Error::BufferTooShort {
                 need: pos + DESC_LOOP_LEN_FIELD,
                 have: payload_end,
-                what: "Rct descriptor_loop_length field",
+                what: "RctSection descriptor_loop_length field",
             });
         }
         let descriptor_loop_length =
@@ -213,7 +213,7 @@ impl<'a> Parse<'a> for Rct<'a> {
 
         let descriptors = DescriptorLoop::new(&bytes[desc_start..desc_end]);
 
-        Ok(Rct {
+        Ok(RctSection {
             table_id_extension_flag,
             service_id,
             version_number,
@@ -230,7 +230,7 @@ impl<'a> Parse<'a> for Rct<'a> {
 
 // ── Serialize ────────────────────────────────────────────────────────────────
 
-impl Serialize for Rct<'_> {
+impl Serialize for RctSection<'_> {
     type Error = crate::error::Error;
 
     fn serialized_len(&self) -> usize {
@@ -307,12 +307,12 @@ impl Serialize for Rct<'_> {
 
 // ── Table impl ────────────────────────────────────────────────────────────────
 
-impl<'a> Table<'a> for Rct<'a> {
+impl<'a> Table<'a> for RctSection<'a> {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Rct<'a> {
+impl<'a> crate::traits::TableDef<'a> for RctSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "RELATED_CONTENT";
 }
@@ -340,7 +340,7 @@ mod tests {
         link_info_loop_bytes: &[u8],
         descriptors: &[u8],
     ) -> Vec<u8> {
-        let rct = Rct {
+        let rct = RctSection {
             table_id_extension_flag: false,
             service_id,
             version_number: version,
@@ -362,7 +362,7 @@ mod tests {
         // service_id=0x0064 (100), version=3, current=true, sec 0/0,
         // year_offset=2003 (0x07D3), link_count=0
         let bytes = build_rct(0x0064, 3, true, 0, 0, 0x07D3, 0, &[], &[]);
-        let rct = Rct::parse(&bytes).unwrap();
+        let rct = RctSection::parse(&bytes).unwrap();
 
         assert!(!rct.table_id_extension_flag);
         assert_eq!(rct.service_id, 0x0064);
@@ -386,7 +386,7 @@ mod tests {
         let desc: &[u8] = &[0x80, 0x02, 0x01, 0x02];
 
         let bytes = build_rct(0x1234, 7, true, 1, 3, 2003, 1, link_payload, desc);
-        let rct = Rct::parse(&bytes).unwrap();
+        let rct = RctSection::parse(&bytes).unwrap();
 
         assert_eq!(rct.service_id, 0x1234);
         assert_eq!(rct.version_number, 7);
@@ -402,7 +402,7 @@ mod tests {
     fn parse_rejects_wrong_table_id() {
         let mut bytes = build_rct(0x0001, 0, true, 0, 0, 2024, 0, &[], &[]);
         bytes[0] = 0x4A; // BAT table_id
-        let err = Rct::parse(&bytes).unwrap_err();
+        let err = RctSection::parse(&bytes).unwrap_err();
         assert!(matches!(
             err,
             Error::UnexpectedTableId { table_id: 0x4A, .. }
@@ -412,7 +412,7 @@ mod tests {
     #[test]
     fn parse_rejects_buffer_too_short() {
         // Less than MIN_SECTION_LEN bytes.
-        let err = Rct::parse(&[0x76, 0x80, 0x00]).unwrap_err();
+        let err = RctSection::parse(&[0x76, 0x80, 0x00]).unwrap_err();
         assert!(matches!(err, Error::BufferTooShort { .. }));
     }
 
@@ -421,7 +421,7 @@ mod tests {
         let link_loop: &[u8] = &[0xF0, 0x03, 0x11, 0x22, 0x33];
         let desc: &[u8] = &[0x58, 0x00]; // local_time_offset_descriptor, length 0
 
-        let rct = Rct {
+        let rct = RctSection {
             table_id_extension_flag: true,
             service_id: 0xABCD,
             version_number: 15,
@@ -436,7 +436,7 @@ mod tests {
 
         let mut buf = vec![0u8; rct.serialized_len()];
         rct.serialize_into(&mut buf).unwrap();
-        let parsed = Rct::parse(&buf).unwrap();
+        let parsed = RctSection::parse(&buf).unwrap();
 
         assert_eq!(parsed.table_id_extension_flag, rct.table_id_extension_flag);
         assert_eq!(parsed.service_id, rct.service_id);

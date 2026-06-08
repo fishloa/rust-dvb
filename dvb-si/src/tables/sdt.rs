@@ -59,7 +59,7 @@ pub struct SdtService<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
-pub struct Sdt<'a> {
+pub struct SdtSection<'a> {
     /// Variant discriminator (table_id 0x42 vs 0x46).
     pub kind: SdtKind,
     /// transport_stream_id of the described TS.
@@ -78,7 +78,7 @@ pub struct Sdt<'a> {
     pub services: Vec<SdtService<'a>>,
 }
 
-impl<'a> Parse<'a> for Sdt<'a> {
+impl<'a> Parse<'a> for SdtSection<'a> {
     type Error = crate::error::Error;
     fn parse(bytes: &'a [u8]) -> Result<Self> {
         let min_len = MIN_HEADER_LEN + EXTENSION_HEADER_LEN + POST_EXTENSION_LEN + CRC_LEN;
@@ -86,7 +86,7 @@ impl<'a> Parse<'a> for Sdt<'a> {
             return Err(Error::BufferTooShort {
                 need: min_len,
                 have: bytes.len(),
-                what: "Sdt",
+                what: "SdtSection",
             });
         }
         let kind = match bytes[0] {
@@ -95,7 +95,7 @@ impl<'a> Parse<'a> for Sdt<'a> {
             other => {
                 return Err(Error::UnexpectedTableId {
                     table_id: other,
-                    what: "Sdt",
+                    what: "SdtSection",
                     expected: &[TABLE_ID_ACTUAL, TABLE_ID_OTHER],
                 });
             }
@@ -150,7 +150,7 @@ impl<'a> Parse<'a> for Sdt<'a> {
             pos = desc_end;
         }
 
-        Ok(Sdt {
+        Ok(SdtSection {
             kind,
             transport_stream_id,
             version_number,
@@ -163,7 +163,7 @@ impl<'a> Parse<'a> for Sdt<'a> {
     }
 }
 
-impl Serialize for Sdt<'_> {
+impl Serialize for SdtSection<'_> {
     type Error = crate::error::Error;
     fn serialized_len(&self) -> usize {
         let svc_bytes: usize = self
@@ -221,12 +221,12 @@ impl Serialize for Sdt<'_> {
     }
 }
 
-impl<'a> Table<'a> for Sdt<'a> {
+impl<'a> Table<'a> for SdtSection<'a> {
     const TABLE_ID: u8 = TABLE_ID_ACTUAL;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Sdt<'a> {
+impl<'a> crate::traits::TableDef<'a> for SdtSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[
         (TABLE_ID_ACTUAL, TABLE_ID_ACTUAL),
         (TABLE_ID_OTHER, TABLE_ID_OTHER),
@@ -283,8 +283,14 @@ mod tests {
     fn parse_actual_and_other_tables_distinguished_by_table_id() {
         let a = build_sdt(SdtKind::Actual, 1, 0, 0x20, &[]);
         let o = build_sdt(SdtKind::Other, 1, 0, 0x20, &[]);
-        assert!(matches!(Sdt::parse(&a).unwrap().kind, SdtKind::Actual));
-        assert!(matches!(Sdt::parse(&o).unwrap().kind, SdtKind::Other));
+        assert!(matches!(
+            SdtSection::parse(&a).unwrap().kind,
+            SdtKind::Actual
+        ));
+        assert!(matches!(
+            SdtSection::parse(&o).unwrap().kind,
+            SdtKind::Other
+        ));
     }
 
     #[test]
@@ -303,7 +309,7 @@ mod tests {
                 vec![0x48, 0x05, 0x01, 0x02, 0x03, 0x04, 0x05],
             )],
         );
-        let sdt = Sdt::parse(&bytes).unwrap();
+        let sdt = SdtSection::parse(&bytes).unwrap();
         assert_eq!(sdt.services.len(), 1);
         assert_eq!(sdt.services[0].service_id, 100);
         assert!(sdt.services[0].eit_schedule_flag);
@@ -325,7 +331,7 @@ mod tests {
             0x20,
             &[(1, false, false, 0, true, vec![])],
         );
-        let sdt = Sdt::parse(&bytes).unwrap();
+        let sdt = SdtSection::parse(&bytes).unwrap();
         assert!(sdt.services[0].free_ca_mode);
     }
 
@@ -338,13 +344,13 @@ mod tests {
             0x20,
             &[(1, false, false, 2, false, vec![])],
         );
-        let sdt = Sdt::parse(&bytes).unwrap();
+        let sdt = SdtSection::parse(&bytes).unwrap();
         assert_eq!(sdt.services[0].running_status, 2);
     }
 
     #[test]
     fn parse_rejects_short_buffer() {
-        let err = Sdt::parse(&[0x42, 0x00]).unwrap_err();
+        let err = SdtSection::parse(&[0x42, 0x00]).unwrap_err();
         assert!(matches!(err, Error::BufferTooShort { .. }));
     }
 
@@ -352,7 +358,7 @@ mod tests {
     fn parse_rejects_wrong_table_id() {
         let mut bytes = build_sdt(SdtKind::Actual, 1, 0, 0x20, &[]);
         bytes[0] = 0x00;
-        let err = Sdt::parse(&bytes).unwrap_err();
+        let err = SdtSection::parse(&bytes).unwrap_err();
         assert!(matches!(
             err,
             Error::UnexpectedTableId { table_id: 0x00, .. }
@@ -362,7 +368,7 @@ mod tests {
     #[test]
     fn serialize_round_trip() {
         let desc1: [u8; 4] = [0x48, 0x02, 0xAA, 0xBB];
-        let sdt = Sdt {
+        let sdt = SdtSection {
             kind: SdtKind::Actual,
             transport_stream_id: 0x1234,
             version_number: 5,
@@ -391,14 +397,14 @@ mod tests {
         };
         let mut buf = vec![0u8; sdt.serialized_len()];
         sdt.serialize_into(&mut buf).unwrap();
-        let re = Sdt::parse(&buf).unwrap();
+        let re = SdtSection::parse(&buf).unwrap();
         assert_eq!(sdt, re);
     }
 
     #[test]
     fn zero_services_is_valid() {
         let bytes = build_sdt(SdtKind::Actual, 1, 0, 0x20, &[]);
-        let sdt = Sdt::parse(&bytes).unwrap();
+        let sdt = SdtSection::parse(&bytes).unwrap();
         assert_eq!(sdt.services.len(), 0);
     }
 }

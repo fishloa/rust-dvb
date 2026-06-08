@@ -3,7 +3,7 @@
 //! This test proves the composed pipeline works by building a fully synthetic
 //! fixture layer by layer:
 //!
-//! 1. A valid PAT section (built via `dvb_si::tables::Pat::serialize_into`).
+//! 1. A valid PAT section (built via `dvb_si::tables::PatSection::serialize_into`).
 //! 2. Wrapped in a 188-byte MPEG-TS packet (sync 0x47, PID 0x0000, PUSI,
 //!    pointer_field 0, 0xFF padding).
 //! 3. Wrapped in a Normal-Mode BBFrame: 10-byte BBHEADER (`NmTsIter`-compatible
@@ -18,7 +18,7 @@
 //!    holds the raw BBHEADER + data field.
 //! 7. `Bbheader::parse` + `up_iter` extracts the inner TS packets.
 //! 8. Each inner TS packet is fed to `SiDemux`.
-//! 9. We assert `AnyTable::Pat` arrives with the expected program entries.
+//! 9. We assert `AnyTableSection::PatSection` arrives with the expected program entries.
 //!
 //! ## Hostility (T2-MI side)
 //!
@@ -32,7 +32,7 @@ use dvb_bbframe::header::{Bbheader, Matype, Mode, TsGs, BBHEADER_LEN};
 use dvb_bbframe::packet::NM_UP_SIZE;
 use dvb_common::crc32_mpeg2;
 use dvb_si::demux::SiDemux;
-use dvb_si::tables::AnyTable;
+use dvb_si::tables::AnyTableSection;
 use dvb_t2mi::payload::AnyPayload;
 use dvb_t2mi::pump::T2miPump;
 
@@ -50,9 +50,9 @@ const PAYLOAD_FLAG: u8 = 0x10;
 /// Returns the full byte sequence including the CRC-32 trailer.
 fn build_pat_section() -> Vec<u8> {
     use dvb_common::Serialize;
-    use dvb_si::tables::pat::{Pat, PatEntry};
+    use dvb_si::tables::pat::{PatEntry, PatSection};
 
-    let pat = Pat {
+    let pat = PatSection {
         transport_stream_id: 0x0001,
         version_number: 0,
         current_next_indicator: true,
@@ -237,7 +237,7 @@ fn outer_ts_packets(pid: u16, t2mi_data: &[u8]) -> Vec<[u8; TS_PACKET_SIZE]> {
 // ── Main chain test ───────────────────────────────────────────────────────────
 
 /// Full pipeline: outer TS → T2miPump → AnyPayload::Bbframe → Bbheader + up_iter
-/// → inner TS → SiDemux → AnyTable::Pat with expected entries.
+/// → inner TS → SiDemux → AnyTableSection::PatSection with expected entries.
 #[test]
 fn chain_t2mi_bbframe_si_pat() {
     // Layer 1: PAT section
@@ -291,20 +291,20 @@ fn chain_t2mi_bbframe_si_pat() {
     assert_eq!(inner_pkts.len(), 1, "expected one inner TS packet");
     assert_eq!(inner_pkts[0][0], TS_SYNC, "inner TS sync byte restored");
 
-    // ── Step E: SiDemux → AnyTable::Pat ─────────────────────────────────────
+    // ── Step E: SiDemux → AnyTableSection::PatSection ─────────────────────────────────────
     let mut demux = SiDemux::builder().build();
     let events: Vec<_> = demux.feed(&inner_pkts[0]).collect();
     assert_eq!(events.len(), 1, "SiDemux must emit one section event");
 
-    let table = events[0].table().expect("table dispatch");
+    let table = events[0].table_section().expect("table dispatch");
     match table {
-        AnyTable::Pat(pat) => {
+        AnyTableSection::PatSection(pat) => {
             assert_eq!(pat.transport_stream_id, 0x0001, "TSID");
             assert_eq!(pat.entries.len(), 1, "one program entry");
             assert_eq!(pat.entries[0].program_number, 1, "program_number");
             assert_eq!(pat.entries[0].pid, 0x0100, "PMT PID");
         }
-        other => panic!("expected AnyTable::Pat, got {other:?}"),
+        other => panic!("expected AnyTableSection::PatSection, got {other:?}"),
     }
 }
 

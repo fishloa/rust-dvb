@@ -1,6 +1,6 @@
 //! Bouquet Association Table — ETSI EN 300 468 §5.2.2.
 //!
-//! BAT groups services into operator-defined bouquets ("TNT Sat HD",
+//! BAT groups services into operator-defined bouquets ("TNT SatSection HD",
 //! "Sky DE Sports", "ORF DIGITAL" etc). Carried on PID 0x0011 with
 //! table_id 0x4A. Structure mirrors NIT: bouquet-level descriptors +
 //! transport_stream loop with per-TS descriptors.
@@ -44,7 +44,7 @@ pub struct BatTransportStream<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
-pub struct Bat<'a> {
+pub struct BatSection<'a> {
     /// Bouquet identifier (table_id_extension at bytes 3-4).
     pub bouquet_id: u16,
     /// 5-bit version_number.
@@ -63,7 +63,7 @@ pub struct Bat<'a> {
     pub transport_streams: Vec<BatTransportStream<'a>>,
 }
 
-impl<'a> Bat<'a> {
+impl<'a> BatSection<'a> {
     /// Walk the bouquet_descriptors looking for the first bouquet_name_descriptor
     /// (tag 0x47). Returns the decoded UTF-8 name, or `None` if not present.
     pub fn bouquet_name(&self) -> Option<String> {
@@ -85,7 +85,7 @@ impl<'a> Bat<'a> {
     }
 }
 
-impl<'a> Parse<'a> for Bat<'a> {
+impl<'a> Parse<'a> for BatSection<'a> {
     type Error = crate::error::Error;
     fn parse(bytes: &'a [u8]) -> Result<Self> {
         let min_len = MIN_HEADER_LEN + EXTENSION_HEADER_LEN + POST_EXTENSION_LEN + 2 + CRC_LEN;
@@ -93,14 +93,14 @@ impl<'a> Parse<'a> for Bat<'a> {
             return Err(Error::BufferTooShort {
                 need: min_len,
                 have: bytes.len(),
-                what: "Bat",
+                what: "BatSection",
             });
         }
 
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "Bat",
+                what: "BatSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -149,7 +149,7 @@ impl<'a> Parse<'a> for Bat<'a> {
             return Err(Error::BufferTooShort {
                 need: 2,
                 have: ts_loop_end - ts_loop_start,
-                what: "Bat transport_stream_loop length header",
+                what: "BatSection transport_stream_loop length header",
             });
         }
 
@@ -171,7 +171,7 @@ impl<'a> Parse<'a> for Bat<'a> {
                 return Err(Error::BufferTooShort {
                     need: pos + TS_HEADER_LEN,
                     have: loop_end,
-                    what: "Bat transport_stream_entry",
+                    what: "BatSection transport_stream_entry",
                 });
             }
 
@@ -204,7 +204,7 @@ impl<'a> Parse<'a> for Bat<'a> {
         // (`Section::validate_crc`). BAT used to be the lone exception, which
         // made the family contract inconsistent.
 
-        Ok(Bat {
+        Ok(BatSection {
             bouquet_id,
             version_number,
             current_next_indicator,
@@ -216,7 +216,7 @@ impl<'a> Parse<'a> for Bat<'a> {
     }
 }
 
-impl Serialize for Bat<'_> {
+impl Serialize for BatSection<'_> {
     type Error = crate::error::Error;
     fn serialized_len(&self) -> usize {
         let bouquet_desc_len = self.bouquet_descriptors.len();
@@ -289,12 +289,12 @@ impl Serialize for Bat<'_> {
     }
 }
 
-impl<'a> Table<'a> for Bat<'a> {
+impl<'a> Table<'a> for BatSection<'a> {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Bat<'a> {
+impl<'a> crate::traits::TableDef<'a> for BatSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "BOUQUET_ASSOCIATION";
 }
@@ -322,7 +322,7 @@ mod tests {
                 descriptors: DescriptorLoop::new(d),
             })
             .collect();
-        let bat = Bat {
+        let bat = BatSection {
             bouquet_id,
             version_number: version,
             current_next_indicator: true,
@@ -339,14 +339,14 @@ mod tests {
     #[test]
     fn parse_extracts_bouquet_id() {
         let bytes = build_bat(0x1234, 3, 0, 0, &[], &[]);
-        let bat = Bat::parse(&bytes).unwrap();
+        let bat = BatSection::parse(&bytes).unwrap();
         assert_eq!(bat.bouquet_id, 0x1234);
     }
 
     #[test]
     fn parse_extracts_version_and_cni() {
         let bytes = build_bat(0x0001, 7, 0, 0, &[], &[]);
-        let bat = Bat::parse(&bytes).unwrap();
+        let bat = BatSection::parse(&bytes).unwrap();
         assert_eq!(bat.version_number, 7);
         assert!(bat.current_next_indicator);
     }
@@ -354,7 +354,7 @@ mod tests {
     #[test]
     fn parse_extracts_section_numbers() {
         let bytes = build_bat(0x0001, 0, 2, 4, &[], &[]);
-        let bat = Bat::parse(&bytes).unwrap();
+        let bat = BatSection::parse(&bytes).unwrap();
         assert_eq!(bat.section_number, 2);
         assert_eq!(bat.last_section_number, 4);
     }
@@ -371,7 +371,7 @@ mod tests {
             b'O',
         ];
         let bytes = build_bat(0x0001, 0, 0, 0, &name_desc, &[]);
-        let bat = Bat::parse(&bytes).unwrap();
+        let bat = BatSection::parse(&bytes).unwrap();
         assert_eq!(bat.bouquet_name(), Some("HELLO".to_string()));
     }
 
@@ -380,7 +380,7 @@ mod tests {
         // Non-bouquet-name descriptor (tag 0x40 = network_name, also human-readable).
         let other_desc: Vec<u8> = vec![0x40, 0x03, b'A', b'B', b'C'];
         let bytes = build_bat(0x0001, 0, 0, 0, &other_desc, &[]);
-        let bat = Bat::parse(&bytes).unwrap();
+        let bat = BatSection::parse(&bytes).unwrap();
         assert_eq!(bat.bouquet_name(), None);
     }
 
@@ -389,7 +389,7 @@ mod tests {
         // Private descriptor tag (>= 0x80). Per anti-instructions, surface as raw bytes.
         let private_desc: Vec<u8> = vec![0x80, 0x04, 0xDE, 0xAD, 0xBE, 0xEF];
         let bytes = build_bat(0x0001, 0, 0, 0, &private_desc, &[]);
-        let bat = Bat::parse(&bytes).unwrap();
+        let bat = BatSection::parse(&bytes).unwrap();
         assert_eq!(bat.bouquet_descriptors.raw(), &private_desc[..]);
     }
 
@@ -410,7 +410,7 @@ mod tests {
                 (0x5678, 0x0020, vec![]),
             ],
         );
-        let bat = Bat::parse(&bytes).unwrap();
+        let bat = BatSection::parse(&bytes).unwrap();
         assert_eq!(bat.transport_streams.len(), 2);
         assert_eq!(bat.transport_streams[0].transport_stream_id, 0x1234);
         assert_eq!(bat.transport_streams[0].original_network_id, 0x0020);
@@ -425,7 +425,7 @@ mod tests {
     #[test]
     fn bat_with_no_transport_streams_parses_ok() {
         let bytes = build_bat(0x0001, 0, 0, 0, &[], &[]);
-        let bat = Bat::parse(&bytes).unwrap();
+        let bat = BatSection::parse(&bytes).unwrap();
         assert!(bat.transport_streams.is_empty());
     }
 
@@ -433,7 +433,7 @@ mod tests {
     fn serialize_round_trip() {
         let name_desc: Vec<u8> = vec![DESCRIPTOR_TAG_BOUQUET_NAME, 0x04, b'T', b'E', b'S', b'T'];
         let ts_desc: [u8; 3] = [0x43, 0x01, 0x01];
-        let bat = Bat {
+        let bat = BatSection {
             bouquet_id: 0x4242,
             version_number: 5,
             current_next_indicator: true,
@@ -455,7 +455,7 @@ mod tests {
         };
         let mut buf = vec![0u8; bat.serialized_len()];
         bat.serialize_into(&mut buf).unwrap();
-        let parsed = Bat::parse(&buf).unwrap();
+        let parsed = BatSection::parse(&buf).unwrap();
         assert_eq!(bat, parsed);
     }
 
@@ -466,13 +466,13 @@ mod tests {
     fn bat_parse_does_not_verify_crc() {
         let mut bytes = build_bat(0x0001, 0, 0, 0, &[], &[]);
         bytes[3] ^= 0xFF; // corrupt bouquet_id high byte → CRC now wrong
-        let bat = Bat::parse(&bytes).unwrap();
+        let bat = BatSection::parse(&bytes).unwrap();
         assert_eq!(bat.bouquet_id, 0x0001 ^ 0xFF00);
     }
 
     #[test]
     fn parse_rejects_short_buffer() {
-        let err = Bat::parse(&[0x4A, 0x00]).unwrap_err();
+        let err = BatSection::parse(&[0x4A, 0x00]).unwrap_err();
         assert!(matches!(err, Error::BufferTooShort { .. }));
     }
 
@@ -480,7 +480,7 @@ mod tests {
     fn parse_rejects_wrong_table_id() {
         let mut bytes = build_bat(0x0001, 0, 0, 0, &[], &[]);
         bytes[0] = 0x00;
-        let err = Bat::parse(&bytes).unwrap_err();
+        let err = BatSection::parse(&bytes).unwrap_err();
         assert!(matches!(
             err,
             Error::UnexpectedTableId { table_id: 0x00, .. }
@@ -489,7 +489,7 @@ mod tests {
 
     #[test]
     fn serialize_too_small_buffer_returns_error() {
-        let bat = Bat {
+        let bat = BatSection {
             bouquet_id: 0x0001,
             version_number: 0,
             current_next_indicator: true,

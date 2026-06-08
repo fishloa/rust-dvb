@@ -85,7 +85,7 @@ fn serialize_rejects_too_small_buffer() {
 
 #[test]
 fn st_short_form_round_trip_is_identity() {
-    use dvb_si::tables::st::{St, TABLE_ID};
+    use dvb_si::tables::st::{StSection, TABLE_ID};
 
     // Build a short-form ST section with 3 stuffing bytes.
     let payload: [u8; 3] = [0x00, 0x00, 0x00];
@@ -96,36 +96,36 @@ fn st_short_form_round_trip_is_identity() {
     raw.push((section_length & 0xFF) as u8);
     raw.extend_from_slice(&payload);
 
-    let parsed = St::parse(&raw).expect("parse ST");
+    let parsed = StSection::parse(&raw).expect("parse ST");
     assert_eq!(parsed.len(), 3);
 
     let mut out = vec![0u8; parsed.serialized_len()];
     parsed.serialize_into(&mut out).expect("serialize");
     assert_eq!(out, raw);
 
-    let reparsed = St::parse(&out).expect("reparse");
+    let reparsed = StSection::parse(&out).expect("reparse");
     assert_eq!(parsed, reparsed);
 }
 
 #[test]
 fn st_empty_round_trip() {
-    use dvb_si::tables::st::{St, TABLE_ID};
+    use dvb_si::tables::st::{StSection, TABLE_ID};
 
     let raw: Vec<u8> = vec![TABLE_ID, 0x70, 0x00];
-    let parsed = St::parse(&raw).expect("parse empty ST");
+    let parsed = StSection::parse(&raw).expect("parse empty ST");
     assert!(parsed.is_empty());
 
     let mut out = vec![0u8; parsed.serialized_len()];
     parsed.serialize_into(&mut out).expect("serialize");
     assert_eq!(out, raw);
 
-    let reparsed = St::parse(&out).expect("reparse");
+    let reparsed = StSection::parse(&out).expect("reparse");
     assert_eq!(parsed, reparsed);
 }
 
 #[test]
 fn st_serialize_rejects_too_small_buffer() {
-    use dvb_si::tables::st::{St, TABLE_ID};
+    use dvb_si::tables::st::{StSection, TABLE_ID};
 
     let payload: [u8; 5] = [0x00, 0x00, 0x00, 0x00, 0x00];
     let section_length = payload.len() as u16;
@@ -135,7 +135,7 @@ fn st_serialize_rejects_too_small_buffer() {
     raw.push((section_length & 0xFF) as u8);
     raw.extend_from_slice(&payload);
 
-    let parsed = St::parse(&raw).unwrap();
+    let parsed = StSection::parse(&raw).unwrap();
     let mut too_small = vec![0u8; parsed.serialized_len() - 1];
     let err = parsed.serialize_into(&mut too_small).unwrap_err();
     assert!(

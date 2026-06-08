@@ -8,9 +8,9 @@
 //! - `tests/fixtures/tnt-5w-12732v-isi6-10s.ts` — 2 NIT sections (primary fixture)
 
 use dvb_common::{Parse, Serialize};
-use dvb_si::tables::ait::Ait;
+use dvb_si::tables::ait::AitSection;
 use dvb_si::tables::dsmcc::DsmccSection;
-use dvb_si::tables::nit::Nit;
+use dvb_si::tables::nit::NitSection;
 use dvb_si::ts::{SectionReassembler, TsPacket, TS_PACKET_SIZE};
 
 /// Read a TS file and return all reassembled sections for a given PID.
@@ -56,7 +56,7 @@ fn fixture_m6_ait_sections_parse() {
         if sec.is_empty() || sec[0] != 0x74 {
             continue;
         }
-        let _ait = Ait::parse(sec).expect("AIT should parse");
+        let _ait = AitSection::parse(sec).expect("AIT should parse");
         parsed_count += 1;
     }
     assert_eq!(
@@ -75,10 +75,10 @@ fn fixture_m6_ait_round_trip() {
         if sec.is_empty() || sec[0] != 0x74 {
             continue;
         }
-        let ait = Ait::parse(sec).expect("AIT parse");
+        let ait = AitSection::parse(sec).expect("AIT parse");
         let mut buf = vec![0u8; ait.serialized_len()];
         ait.serialize_into(&mut buf).expect("AIT serialize");
-        let reparsed = Ait::parse(&buf).expect("AIT reparse");
+        let reparsed = AitSection::parse(&buf).expect("AIT reparse");
         assert_eq!(ait, reparsed);
     }
 }
@@ -158,7 +158,7 @@ fn fixture_tnt_isi6_nit_sections_parse() {
         if tid != 0x40 && tid != 0x41 {
             continue;
         }
-        if let Ok(_nit) = Nit::parse(sec) {
+        if let Ok(_nit) = NitSection::parse(sec) {
             parsed_count += 1;
         }
     }
@@ -181,13 +181,13 @@ fn fixture_tnt_isi6_nit_round_trip() {
         if sec.is_empty() || (sec[0] != 0x40 && sec[0] != 0x41) {
             continue;
         }
-        let nit = match Nit::parse(sec) {
+        let nit = match NitSection::parse(sec) {
             Ok(n) => n,
             Err(_) => continue,
         };
         let mut buf = vec![0u8; nit.serialized_len()];
         nit.serialize_into(&mut buf).expect("NIT serialize");
-        let reparsed = Nit::parse(&buf).expect("NIT reparse");
+        let reparsed = NitSection::parse(&buf).expect("NIT reparse");
         assert_eq!(nit, reparsed);
         round_tripped += 1;
     }

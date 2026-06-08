@@ -119,7 +119,7 @@ impl RealTimeParameters {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
-pub struct MpeFec<'a> {
+pub struct MpeFecSection<'a> {
     /// `private_indicator` bit from byte 1 (MPE-FEC is a private section).
     pub private_indicator: bool,
     /// `padding_columns` — number of padding RS columns (byte 3).
@@ -137,7 +137,7 @@ pub struct MpeFec<'a> {
     pub rs_data: &'a [u8],
 }
 
-impl<'a> Parse<'a> for MpeFec<'a> {
+impl<'a> Parse<'a> for MpeFecSection<'a> {
     type Error = crate::error::Error;
 
     fn parse(bytes: &'a [u8]) -> Result<Self> {
@@ -145,14 +145,14 @@ impl<'a> Parse<'a> for MpeFec<'a> {
             return Err(Error::BufferTooShort {
                 need: MIN_LEN,
                 have: bytes.len(),
-                what: "MpeFec",
+                what: "MpeFecSection",
             });
         }
 
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "MpeFec",
+                what: "MpeFecSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -186,7 +186,7 @@ impl<'a> Parse<'a> for MpeFec<'a> {
         let data_end = total - CRC_LEN;
         let rs_data = &bytes[data_start..data_end];
 
-        Ok(MpeFec {
+        Ok(MpeFecSection {
             private_indicator,
             padding_columns,
             current_next_indicator,
@@ -198,7 +198,7 @@ impl<'a> Parse<'a> for MpeFec<'a> {
     }
 }
 
-impl Serialize for MpeFec<'_> {
+impl Serialize for MpeFecSection<'_> {
     type Error = crate::error::Error;
 
     fn serialized_len(&self) -> usize {
@@ -251,12 +251,12 @@ impl Serialize for MpeFec<'_> {
     }
 }
 
-impl<'a> Table<'a> for MpeFec<'a> {
+impl<'a> Table<'a> for MpeFecSection<'a> {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for MpeFec<'a> {
+impl<'a> crate::traits::TableDef<'a> for MpeFecSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "MPE_FEC";
 }
@@ -273,7 +273,7 @@ mod tests {
         rtp: RealTimeParameters,
         rs_data: &[u8],
     ) -> Vec<u8> {
-        let s = MpeFec {
+        let s = MpeFecSection {
             private_indicator: true,
             padding_columns,
             current_next_indicator: current_next,
@@ -300,7 +300,7 @@ mod tests {
     fn parse_happy_path() {
         let rs = [0x11u8, 0x22, 0x33, 0x44];
         let bytes = build_mpe_fec(7, true, 1, 3, sample_rtp(), &rs);
-        let s = MpeFec::parse(&bytes).unwrap();
+        let s = MpeFecSection::parse(&bytes).unwrap();
         assert!(s.private_indicator);
         assert_eq!(s.padding_columns, 7);
         assert!(s.current_next_indicator);
@@ -313,7 +313,7 @@ mod tests {
     #[test]
     fn parse_empty_rs_data() {
         let bytes = build_mpe_fec(0, false, 0, 0, sample_rtp(), &[]);
-        let s = MpeFec::parse(&bytes).unwrap();
+        let s = MpeFecSection::parse(&bytes).unwrap();
         assert_eq!(s.padding_columns, 0);
         assert!(!s.current_next_indicator);
         assert!(s.rs_data.is_empty());
@@ -337,7 +337,7 @@ mod tests {
         let mut bytes = build_mpe_fec(0, true, 0, 0, sample_rtp(), &[]);
         bytes[0] = 0x70; // not 0x78
         assert!(matches!(
-            MpeFec::parse(&bytes).unwrap_err(),
+            MpeFecSection::parse(&bytes).unwrap_err(),
             Error::UnexpectedTableId { table_id: 0x70, .. }
         ));
     }
@@ -345,7 +345,7 @@ mod tests {
     #[test]
     fn parse_rejects_short_buffer() {
         assert!(matches!(
-            MpeFec::parse(&[0x78, 0x80]).unwrap_err(),
+            MpeFecSection::parse(&[0x78, 0x80]).unwrap_err(),
             Error::BufferTooShort { .. }
         ));
     }
@@ -357,7 +357,7 @@ mod tests {
         bytes[1] = (bytes[1] & 0xF0) | ((fake_sl >> 8) as u8 & 0x0F);
         bytes[2] = (fake_sl & 0xFF) as u8;
         assert!(matches!(
-            MpeFec::parse(&bytes).unwrap_err(),
+            MpeFecSection::parse(&bytes).unwrap_err(),
             Error::SectionLengthOverflow { .. }
         ));
     }
@@ -365,7 +365,7 @@ mod tests {
     #[test]
     fn serialize_round_trip() {
         let rs = [0xDEu8, 0xAD, 0xBE, 0xEF, 0x00];
-        let original = MpeFec {
+        let original = MpeFecSection {
             private_indicator: false,
             padding_columns: 191,
             current_next_indicator: false,
@@ -376,12 +376,12 @@ mod tests {
         };
         let mut buf = vec![0u8; original.serialized_len()];
         original.serialize_into(&mut buf).unwrap();
-        assert_eq!(MpeFec::parse(&buf).unwrap(), original);
+        assert_eq!(MpeFecSection::parse(&buf).unwrap(), original);
     }
 
     #[test]
     fn serialize_rejects_output_buffer_too_small() {
-        let s = MpeFec {
+        let s = MpeFecSection {
             private_indicator: false,
             padding_columns: 0,
             current_next_indicator: true,
@@ -399,8 +399,8 @@ mod tests {
 
     #[test]
     fn table_trait_constants() {
-        assert_eq!(<MpeFec as Table>::TABLE_ID, 0x78);
-        assert_eq!(<MpeFec as Table>::PID, 0x0000);
+        assert_eq!(<MpeFecSection as Table>::TABLE_ID, 0x78);
+        assert_eq!(<MpeFecSection as Table>::PID, 0x0000);
     }
 
     #[cfg(feature = "serde")]
@@ -409,7 +409,7 @@ mod tests {
         // Serialize-only: assert serialization yields valid, field-bearing JSON.
         let rs = [0x01u8, 0x02];
         let bytes = build_mpe_fec(12, true, 0, 0, sample_rtp(), &rs);
-        let s = MpeFec::parse(&bytes).unwrap();
+        let s = MpeFecSection::parse(&bytes).unwrap();
         let v: serde_json::Value = serde_json::to_value(&s).unwrap();
         assert_eq!(v["padding_columns"], 12);
         assert_eq!(v["current_next_indicator"], true);

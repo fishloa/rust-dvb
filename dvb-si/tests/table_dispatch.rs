@@ -1,9 +1,9 @@
-//! Integration tests for [`dvb_si::tables::AnyTable`] dispatch.
+//! Integration tests for [`dvb_si::tables::AnyTableSection`] dispatch.
 //!
 //! Every builder here is self-contained: bytes are constructed from scratch
 //! matching the wire format expected by each module's parser.
 
-use dvb_si::tables::AnyTable;
+use dvb_si::tables::AnyTableSection;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -206,89 +206,89 @@ fn build_protection_message() -> Vec<u8> {
 #[test]
 fn dispatch_pat_table_id_0x00() {
     let bytes = build_pat(0x1234, 0, &[(1, 0x0100)]);
-    let parsed = AnyTable::parse(&bytes).unwrap();
+    let parsed = AnyTableSection::parse(&bytes).unwrap();
     assert!(
-        matches!(parsed, AnyTable::Pat(_)),
-        "expected Pat, got {parsed:?}"
+        matches!(parsed, AnyTableSection::PatSection(_)),
+        "expected PatSection, got {parsed:?}"
     );
 }
 
 #[test]
 fn dispatch_pmt_table_id_0x02() {
     let bytes = build_pmt(42, 0, 0x0100);
-    let parsed = AnyTable::parse(&bytes).unwrap();
+    let parsed = AnyTableSection::parse(&bytes).unwrap();
     assert!(
-        matches!(parsed, AnyTable::Pmt(_)),
-        "expected Pmt, got {parsed:?}"
+        matches!(parsed, AnyTableSection::PmtSection(_)),
+        "expected PmtSection, got {parsed:?}"
     );
 }
 
 #[test]
 fn dispatch_sdt_actual_table_id_0x42() {
     let bytes = build_sdt(0x42, 1, 0x0020);
-    let parsed = AnyTable::parse(&bytes).unwrap();
+    let parsed = AnyTableSection::parse(&bytes).unwrap();
     assert!(
-        matches!(parsed, AnyTable::Sdt(_)),
-        "expected Sdt, got {parsed:?}"
+        matches!(parsed, AnyTableSection::SdtSection(_)),
+        "expected SdtSection, got {parsed:?}"
     );
 }
 
 #[test]
 fn dispatch_sdt_other_table_id_0x46() {
     let bytes = build_sdt(0x46, 1, 0x0020);
-    let parsed = AnyTable::parse(&bytes).unwrap();
+    let parsed = AnyTableSection::parse(&bytes).unwrap();
     assert!(
-        matches!(parsed, AnyTable::Sdt(_)),
-        "expected Sdt (other), got {parsed:?}"
+        matches!(parsed, AnyTableSection::SdtSection(_)),
+        "expected SdtSection (other), got {parsed:?}"
     );
 }
 
 #[test]
 fn dispatch_eit_pf_actual_0x4e() {
     let bytes = build_eit(0x4E, 100, 1, 0x0020);
-    let parsed = AnyTable::parse(&bytes).unwrap();
+    let parsed = AnyTableSection::parse(&bytes).unwrap();
     assert!(
-        matches!(parsed, AnyTable::Eit(_)),
-        "expected Eit (p/f actual), got {parsed:?}"
+        matches!(parsed, AnyTableSection::EitSection(_)),
+        "expected EitSection (p/f actual), got {parsed:?}"
     );
 }
 
 #[test]
 fn dispatch_eit_schedule_segment_0x50() {
     let bytes = build_eit(0x50, 100, 1, 0x0020);
-    let parsed = AnyTable::parse(&bytes).unwrap();
+    let parsed = AnyTableSection::parse(&bytes).unwrap();
     assert!(
-        matches!(parsed, AnyTable::Eit(_)),
-        "expected Eit (schedule 0x50), got {parsed:?}"
+        matches!(parsed, AnyTableSection::EitSection(_)),
+        "expected EitSection (schedule 0x50), got {parsed:?}"
     );
 }
 
 #[test]
 fn dispatch_tdt_short_section_0x70() {
     let bytes = build_tdt();
-    let parsed = AnyTable::parse(&bytes).unwrap();
+    let parsed = AnyTableSection::parse(&bytes).unwrap();
     assert!(
-        matches!(parsed, AnyTable::Tdt(_)),
-        "expected Tdt, got {parsed:?}"
+        matches!(parsed, AnyTableSection::TdtSection(_)),
+        "expected TdtSection, got {parsed:?}"
     );
 }
 
 #[test]
 fn dispatch_tot_0x73() {
     let bytes = build_tot();
-    let parsed = AnyTable::parse(&bytes).unwrap();
+    let parsed = AnyTableSection::parse(&bytes).unwrap();
     assert!(
-        matches!(parsed, AnyTable::Tot(_)),
-        "expected Tot, got {parsed:?}"
+        matches!(parsed, AnyTableSection::TotSection(_)),
+        "expected TotSection, got {parsed:?}"
     );
 }
 
 #[test]
 fn dispatch_dsmcc_0x3b() {
     let bytes = build_dsmcc(0x3B);
-    let parsed = AnyTable::parse(&bytes).unwrap();
+    let parsed = AnyTableSection::parse(&bytes).unwrap();
     assert!(
-        matches!(parsed, AnyTable::DsmccSection(_)),
+        matches!(parsed, AnyTableSection::DsmccSection(_)),
         "expected DsmccSection, got {parsed:?}"
     );
 }
@@ -297,14 +297,14 @@ fn dispatch_dsmcc_0x3b() {
 #[test]
 fn dispatch_0x3e_routes_to_dsmcc_not_mpe() {
     let bytes = build_dsmcc(0x3E);
-    let parsed = AnyTable::parse(&bytes).unwrap();
+    let parsed = AnyTableSection::parse(&bytes).unwrap();
     assert!(
-        matches!(parsed, AnyTable::DsmccSection(_)),
+        matches!(parsed, AnyTableSection::DsmccSection(_)),
         "0x3E should dispatch to DsmccSection, got {parsed:?}"
     );
     // Must NOT be MpeDatagram via the default dispatcher.
     assert!(
-        !matches!(parsed, AnyTable::MpeDatagram(_)),
+        !matches!(parsed, AnyTableSection::MpeDatagram(_)),
         "0x3E must not auto-dispatch to MpeDatagram"
     );
 }
@@ -312,9 +312,9 @@ fn dispatch_0x3e_routes_to_dsmcc_not_mpe() {
 #[test]
 fn dispatch_protection_message_0x7b() {
     let bytes = build_protection_message();
-    let parsed = AnyTable::parse(&bytes).unwrap();
+    let parsed = AnyTableSection::parse(&bytes).unwrap();
     assert!(
-        matches!(parsed, AnyTable::ProtectionMessage(_)),
+        matches!(parsed, AnyTableSection::ProtectionMessage(_)),
         "expected ProtectionMessage, got {parsed:?}"
     );
 }
@@ -323,9 +323,9 @@ fn dispatch_protection_message_0x7b() {
 fn dispatch_unknown_table_id_0x90() {
     // 0x90 is not defined; should produce Unknown.
     let bytes = [0x90u8, 0x01, 0x00]; // minimal: header + 1 section_length byte
-    let parsed = AnyTable::parse(&bytes).unwrap();
+    let parsed = AnyTableSection::parse(&bytes).unwrap();
     match parsed {
-        AnyTable::Unknown { table_id, raw } => {
+        AnyTableSection::Unknown { table_id, raw } => {
             assert_eq!(table_id, 0x90);
             assert_eq!(raw, &[0x90u8, 0x01, 0x00]);
         }
@@ -335,7 +335,7 @@ fn dispatch_unknown_table_id_0x90() {
 
 #[test]
 fn dispatch_empty_input_returns_buffer_too_short() {
-    let err = AnyTable::parse(&[]).unwrap_err();
+    let err = AnyTableSection::parse(&[]).unwrap_err();
     assert!(
         matches!(err, dvb_si::error::Error::BufferTooShort { .. }),
         "expected BufferTooShort, got {err:?}"
@@ -346,7 +346,7 @@ fn dispatch_empty_input_returns_buffer_too_short() {
 /// macro already checks this; this is an integration-level sanity check.
 #[test]
 fn dispatched_ranges_are_sorted_and_disjoint() {
-    let ranges = AnyTable::DISPATCHED_RANGES;
+    let ranges = AnyTableSection::DISPATCHED_RANGES;
     // Each range must be well-formed (lo <= hi).
     for &(lo, hi) in ranges {
         assert!(lo <= hi, "malformed range ({lo:#04x}, {hi:#04x})");
@@ -388,35 +388,36 @@ fn parse_as_mpe_datagram_for_0x3e() {
     // Verbatim checksum (SSI=0 path: trailer bytes are preserved as-is).
     v.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
 
-    let mpe = AnyTable::parse_as::<MpeDatagramSection>(&v).expect("valid MPE section must parse");
+    let mpe =
+        AnyTableSection::parse_as::<MpeDatagramSection>(&v).expect("valid MPE section must parse");
     // MAC is reassembled network-order: MAC_1..MAC_6
     assert_eq!(mpe.mac_address, [0x44, 0x33, 0x22, 0x11, 0xBB, 0xAA]);
     assert!(mpe.payload.is_empty());
 }
 
-/// Every `TableId` variant maps to a byte covered by `AnyTable::DISPATCHED_RANGES`.
+/// Every `TableId` variant maps to a byte covered by `AnyTableSection::DISPATCHED_RANGES`.
 #[test]
 fn every_table_id_variant_is_dispatched() {
-    let ranges = dvb_si::tables::AnyTable::DISPATCHED_RANGES;
+    let ranges = dvb_si::tables::AnyTableSection::DISPATCHED_RANGES;
     for b in 0u8..=0xFF {
         if dvb_si::TableId::try_from(b).is_ok() {
             let covered = ranges.iter().any(|&(lo, hi)| b >= lo && b <= hi);
             assert!(
                 covered,
                 "TableId byte {b:#04x} is a known variant but is not covered by \
-                 AnyTable::DISPATCHED_RANGES"
+                 AnyTableSection::DISPATCHED_RANGES"
             );
         }
     }
 }
 
-/// `AnyTable::name()` reflects the contained type's `TableDef::NAME`.
+/// `AnyTableSection::name()` reflects the contained type's `TableDef::NAME`.
 #[test]
 fn name_maps_variant_to_tabledef_name() {
     let pat = build_pat(0x0001, 0, &[(1, 0x0100)]);
-    let table = AnyTable::parse(&pat).expect("valid PAT");
+    let table = AnyTableSection::parse(&pat).expect("valid PAT");
     assert_eq!(table.name(), "PROGRAM_ASSOCIATION");
 
-    let unknown = AnyTable::parse(&[0x90, 0x01, 0x00]).expect("unknown ok");
+    let unknown = AnyTableSection::parse(&[0x90, 0x01, 0x00]).expect("unknown ok");
     assert_eq!(unknown.name(), "UNKNOWN");
 }
