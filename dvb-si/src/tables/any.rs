@@ -1,29 +1,29 @@
-//! Unified table dispatch: [`AnyTable`].
+//! Unified table-section dispatch: [`AnyTableSection`].
 //!
-//! [`AnyTable`] is generated from a single declarative list
-//! (`declare_tables!`) — one line per crate-implemented table type.
+//! [`AnyTableSection`] is generated from a single declarative list
+//! (`declare_tables!`) — one line per crate-implemented section type.
 //! The list is the single source of truth: it produces the enum, the
 //! `From<T>` conversions, the table_id range dispatcher, and a drift test
 //! that pins each range literal to the type's
 //! [`crate::traits::TableDef::TABLE_ID_RANGES`].
 //!
-//! [`AnyTable::parse`] dispatches on the first byte (table_id) using range
+//! [`AnyTableSection::parse`] dispatches on the first byte (table_id) using range
 //! patterns. An unrecognised table_id yields
-//! `AnyTable::Unknown { table_id, raw }` — the full section bytes are
+//! `AnyTableSection::Unknown { table_id, raw }` — the full section bytes are
 //! retained.
 //!
-//! [`AnyTable::parse_as`] is a type-keyed thin alias to `T::parse` — it
+//! [`AnyTableSection::parse_as`] is a type-keyed thin alias to `T::parse` — it
 //! bypasses dispatch entirely and lets callers obtain, for example, a
 //! [`crate::tables::mpe::MpeDatagramSection`] for a `0x3E` section that the
 //! default dispatcher would route to `DsmccSection`.
 //!
 //! ```
 //! use dvb_common::Serialize;
-//! use dvb_si::tables::AnyTable;
-//! use dvb_si::tables::pat::{Pat, PatEntry};
+//! use dvb_si::tables::AnyTableSection;
+//! use dvb_si::tables::pat::{PatSection, PatEntry};
 //!
-//! // Serialize a small PAT, then dispatch the bytes back through AnyTable::parse.
-//! let pat = Pat {
+//! // Serialize a small PAT, then dispatch the bytes back through AnyTableSection::parse.
+//! let pat = PatSection {
 //!     transport_stream_id: 1, version_number: 0, current_next_indicator: true,
 //!     section_number: 0, last_section_number: 0,
 //!     entries: vec![PatEntry { program_number: 1, pid: 0x0100 }],
@@ -31,13 +31,13 @@
 //! let mut section = vec![0u8; pat.serialized_len()];
 //! pat.serialize_into(&mut section).unwrap();
 //!
-//! match AnyTable::parse(&section).unwrap() {
-//!     AnyTable::Pat(parsed) => assert_eq!(parsed.entries[0].pid, 0x0100),
-//!     other => panic!("expected Pat, got {other:?}"),
+//! match AnyTableSection::parse(&section).unwrap() {
+//!     AnyTableSection::PatSection(parsed) => assert_eq!(parsed.entries[0].pid, 0x0100),
+//!     other => panic!("expected PatSection, got {other:?}"),
 //! }
 //! ```
 //!
-//! # Adding a table
+//! # Adding a section parser
 //!
 //! 1. Create the module with the wire layout, a `pub const TABLE_ID: u8` (or
 //!    `TABLE_ID_FIRST`/`TABLE_ID_LAST` for a range), and the symmetric
@@ -54,31 +54,32 @@
 //! 4. The disjointness test in `declare_tables_tests` catches any overlapping
 //!    range entries automatically — no manual test edits needed.
 
-/// Declares [`AnyTable`] + its dispatcher from one range list.
+/// Declares [`AnyTableSection`] + its dispatcher from one range list.
 ///
 /// Each dispatch line is `Variant = [lo..=hi, …] => module::Type[<'a>]`.
 /// The optional trailing `@no_dispatch …` section adds variants that are NOT
 /// reachable from the generated dispatcher — the variant exists for callers
-/// that obtain the type via `AnyTable::parse_as` or direct `T::parse`.
+/// that obtain the type via `AnyTableSection::parse_as` or direct `T::parse`.
 macro_rules! declare_tables {
     (
         $lt:lifetime;
         $( $variant:ident = [ $( $lo:literal ..= $hi:literal ),+ ] => $($path:ident)::+ $(<$plt:lifetime>)? ),+ $(,)?
         $( ; @no_dispatch $( $nd_variant:ident => $($nd_path:ident)::+ $(<$nd_plt:lifetime>)? ),+ $(,)? )?
     ) => {
-        /// Every crate-implemented table, plus an `Unknown` fallthrough.
+        /// Every crate-implemented table-section parser, plus an `Unknown`
+        /// fallthrough.
         ///
         /// serde uses external tagging with camelCase variant keys — a parsed
-        /// PAT serializes as `{"pat": {…}}`.
-        /// Variant names map 1:1 to the table modules; see each module for the
-        /// wire layout.
+        /// PAT section serializes as `{"patSection": {…}}`.
+        /// Variant names map 1:1 to section parser types; see each module for
+        /// the wire layout.
         ///
         /// `0x3E` (`datagram_section`) is routed to `DsmccSection` by the
         /// default dispatcher. The typed MPE view is reachable via
-        /// `AnyTable::parse_as::<MpeDatagramSection>` or
+        /// `AnyTableSection::parse_as::<MpeDatagramSection>` or
         /// `MpeDatagramSection::parse` directly; the `MpeDatagram` variant
         /// exists in this enum for API completeness but is never produced by
-        /// `AnyTable::parse`.
+        /// `AnyTableSection::parse`.
         #[derive(Debug)]
         #[cfg_attr(feature = "serde", derive(serde::Serialize))]
         #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
@@ -86,7 +87,7 @@ macro_rules! declare_tables {
         // table views or `&$lt [u8]` (`Unknown`), so the derived impl is sound.
         #[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
         #[non_exhaustive]
-        pub enum AnyTable<$lt> {
+        pub enum AnyTableSection<$lt> {
             $(
                 #[allow(missing_docs)]
                 $variant($($path)::+ $(<$plt>)?),
@@ -106,21 +107,21 @@ macro_rules! declare_tables {
         }
 
         $(
-            impl<$lt> From<$($path)::+ $(<$plt>)?> for AnyTable<$lt> {
+            impl<$lt> From<$($path)::+ $(<$plt>)?> for AnyTableSection<$lt> {
                 fn from(t: $($path)::+ $(<$plt>)?) -> Self {
                     Self::$variant(t)
                 }
             }
         )+
         $($(
-            impl<$lt> From<$($nd_path)::+ $(<$nd_plt>)?> for AnyTable<$lt> {
+            impl<$lt> From<$($nd_path)::+ $(<$nd_plt>)?> for AnyTableSection<$lt> {
                 fn from(t: $($nd_path)::+ $(<$nd_plt>)?) -> Self {
                     Self::$nd_variant(t)
                 }
             }
         )+)?
 
-        impl<$lt> AnyTable<$lt> {
+        impl<$lt> AnyTableSection<$lt> {
             /// All table_id ranges covered by the auto-dispatcher (excludes
             /// `@no_dispatch` variants). Each entry is `(lo, hi)` inclusive.
             pub const DISPATCHED_RANGES: &'static [(u8, u8)] =
@@ -129,7 +130,7 @@ macro_rules! declare_tables {
             /// Diagnostic name of the contained table — the type's
             /// [`TableDef::NAME`](crate::traits::TableDef::NAME)
             /// (`"EVENT_INFORMATION"`, `"PROGRAM_ASSOCIATION"`, …);
-            /// `"UNKNOWN"` for [`AnyTable::Unknown`].
+            /// `"UNKNOWN"` for [`AnyTableSection::Unknown`].
             #[must_use]
             pub fn name(&self) -> &'static str {
                 match self {
@@ -148,7 +149,7 @@ macro_rules! declare_tables {
             /// Dispatch one complete section by its table_id (byte 0).
             ///
             /// Returns `Err(BufferTooShort)` when `bytes` is empty.
-            /// Unknown table_ids produce `Ok(AnyTable::Unknown { … })`.
+            /// Unknown table_ids produce `Ok(AnyTableSection::Unknown { … })`.
             ///
             /// # Errors
             /// - [`crate::Error::BufferTooShort`] — `bytes` is empty.
@@ -174,12 +175,12 @@ macro_rules! declare_tables {
             /// dispatch, e.g.:
             ///
             /// ```rust
-            /// use dvb_si::tables::AnyTable;
+            /// use dvb_si::tables::AnyTableSection;
             /// use dvb_si::tables::mpe::MpeDatagramSection;
             ///
             /// // A deliberately-too-short slice: parse_as propagates the
             /// // BufferTooShort error from MpeDatagramSection::parse.
-            /// let err = AnyTable::parse_as::<MpeDatagramSection>(&[0x3E, 0x00]);
+            /// let err = AnyTableSection::parse_as::<MpeDatagramSection>(&[0x3E, 0x00]);
             /// assert!(err.is_err());
             /// ```
             ///
@@ -240,40 +241,40 @@ macro_rules! declare_tables {
 
 declare_tables! {'a;
     // MPEG-2 systems tables (ISO/IEC 13818-1).
-    Pat       = [0x00..=0x00] => crate::tables::pat::Pat,
-    Cat       = [0x01..=0x01] => crate::tables::cat::Cat<'a>,
-    Pmt       = [0x02..=0x02] => crate::tables::pmt::Pmt<'a>,
-    Tsdt      = [0x03..=0x03] => crate::tables::tsdt::Tsdt<'a>,
+    PatSection       = [0x00..=0x00] => crate::tables::pat::PatSection,
+    CatSection       = [0x01..=0x01] => crate::tables::cat::CatSection<'a>,
+    PmtSection       = [0x02..=0x02] => crate::tables::pmt::PmtSection<'a>,
+    TsdtSection      = [0x03..=0x03] => crate::tables::tsdt::TsdtSection<'a>,
     // DSM-CC sections (ISO/IEC 13818-6) — 0x3E is included; the MPE typed
-    // view (`MpeDatagramSection`) is reachable via `AnyTable::parse_as` or
+    // view (`MpeDatagramSection`) is reachable via `AnyTableSection::parse_as` or
     // `MpeDatagramSection::parse`.
     DsmccSection = [0x3A..=0x3F] => crate::tables::dsmcc::DsmccSection<'a>,
     // DVB tables (ETSI EN 300 468).
-    Nit       = [0x40..=0x41] => crate::tables::nit::Nit<'a>,
-    Sdt       = [0x42..=0x42, 0x46..=0x46] => crate::tables::sdt::Sdt<'a>,
-    Bat       = [0x4A..=0x4A] => crate::tables::bat::Bat<'a>,
-    Unt       = [0x4B..=0x4B] => crate::tables::unt::Unt<'a>,
-    Int       = [0x4C..=0x4C] => crate::tables::int::Int<'a>,
-    Sat       = [0x4D..=0x4D] => crate::tables::sat::Sat<'a>,
-    Eit       = [0x4E..=0x6F] => crate::tables::eit::Eit<'a>,
-    Tdt       = [0x70..=0x70] => crate::tables::tdt::Tdt,
-    Rst       = [0x71..=0x71] => crate::tables::rst::Rst,
-    St        = [0x72..=0x72] => crate::tables::st::St,
-    Tot       = [0x73..=0x73] => crate::tables::tot::Tot<'a>,
-    Ait       = [0x74..=0x74] => crate::tables::ait::Ait<'a>,
-    Container = [0x75..=0x75] => crate::tables::container::Container<'a>,
-    Rct       = [0x76..=0x76] => crate::tables::rct::Rct<'a>,
-    Cit       = [0x77..=0x77] => crate::tables::cit::Cit<'a>,
-    MpeFec    = [0x78..=0x78] => crate::tables::mpe_fec::MpeFec<'a>,
-    Rnt       = [0x79..=0x79] => crate::tables::rnt::Rnt<'a>,
-    MpeIfec   = [0x7A..=0x7A] => crate::tables::mpe_ifec::MpeIfec<'a>,
+    NitSection       = [0x40..=0x41] => crate::tables::nit::NitSection<'a>,
+    SdtSection       = [0x42..=0x42, 0x46..=0x46] => crate::tables::sdt::SdtSection<'a>,
+    BatSection       = [0x4A..=0x4A] => crate::tables::bat::BatSection<'a>,
+    UntSection       = [0x4B..=0x4B] => crate::tables::unt::UntSection<'a>,
+    IntSection       = [0x4C..=0x4C] => crate::tables::int::IntSection<'a>,
+    SatSection       = [0x4D..=0x4D] => crate::tables::sat::SatSection<'a>,
+    EitSection       = [0x4E..=0x6F] => crate::tables::eit::EitSection<'a>,
+    TdtSection       = [0x70..=0x70] => crate::tables::tdt::TdtSection,
+    RstSection       = [0x71..=0x71] => crate::tables::rst::RstSection,
+    StSection        = [0x72..=0x72] => crate::tables::st::StSection,
+    TotSection       = [0x73..=0x73] => crate::tables::tot::TotSection<'a>,
+    AitSection       = [0x74..=0x74] => crate::tables::ait::AitSection<'a>,
+    ContainerSection = [0x75..=0x75] => crate::tables::container::ContainerSection<'a>,
+    RctSection       = [0x76..=0x76] => crate::tables::rct::RctSection<'a>,
+    CitSection       = [0x77..=0x77] => crate::tables::cit::CitSection<'a>,
+    MpeFecSection    = [0x78..=0x78] => crate::tables::mpe_fec::MpeFecSection<'a>,
+    RntSection       = [0x79..=0x79] => crate::tables::rnt::RntSection<'a>,
+    MpeIfecSection   = [0x7A..=0x7A] => crate::tables::mpe_ifec::MpeIfecSection<'a>,
     ProtectionMessage    = [0x7B..=0x7B] => crate::tables::protection_message::ProtectionMessageSection<'a>,
     DownloadableFontInfo = [0x7C..=0x7C] => crate::tables::downloadable_font_info::DownloadableFontInfoSection<'a>,
-    Dit       = [0x7E..=0x7E] => crate::tables::dit::Dit,
-    Sit       = [0x7F..=0x7F] => crate::tables::sit::Sit<'a>;
+    DitSection       = [0x7E..=0x7E] => crate::tables::dit::DitSection,
+    SitSection       = [0x7F..=0x7F] => crate::tables::sit::SitSection<'a>;
     // MPE datagram_section (ETSI EN 301 192 §7.1): table_id 0x3E overlaps
     // the DsmccSection range above, so it is NOT auto-dispatched. Use
-    // `AnyTable::parse_as::<MpeDatagramSection>(bytes)` for the typed view.
+    // `AnyTableSection::parse_as::<MpeDatagramSection>(bytes)` for the typed view.
     @no_dispatch
     MpeDatagram => crate::tables::mpe::MpeDatagramSection<'a>,
 }

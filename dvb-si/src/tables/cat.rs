@@ -40,7 +40,7 @@ pub struct CatCaEntry {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
-pub struct Cat<'a> {
+pub struct CatSection<'a> {
     /// 5-bit version_number from the section header.
     pub version_number: u8,
     /// current_next_indicator bit.
@@ -53,11 +53,11 @@ pub struct Cat<'a> {
     /// §2.4.4.6 permits descriptors other than CA in this loop; keeping the loop
     /// raw makes parse → serialize identity hold for all of them. Serializes as
     /// the typed descriptor sequence; `.raw()` yields the wire bytes. Use
-    /// [`Cat::ca_descriptors`] for the typed CA (tag 0x09) view.
+    /// [`CatSection::ca_descriptors`] for the typed CA (tag 0x09) view.
     pub descriptors: DescriptorLoop<'a>,
 }
 
-impl<'a> Cat<'a> {
+impl<'a> CatSection<'a> {
     /// Typed view of the CA descriptors (tag 0x09) in the descriptor loop.
     /// Non-CA descriptors are skipped; a truncated trailing descriptor ends
     /// the walk.
@@ -87,7 +87,7 @@ impl<'a> Cat<'a> {
     }
 }
 
-impl<'a> Parse<'a> for Cat<'a> {
+impl<'a> Parse<'a> for CatSection<'a> {
     type Error = Error;
 
     fn parse(bytes: &'a [u8]) -> Result<Self> {
@@ -95,14 +95,14 @@ impl<'a> Parse<'a> for Cat<'a> {
             return Err(Error::BufferTooShort {
                 need: MIN_HEADER_LEN + EXTENSION_HEADER_LEN + CRC_LEN,
                 have: bytes.len(),
-                what: "Cat",
+                what: "CatSection",
             });
         }
 
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "Cat",
+                what: "CatSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -128,7 +128,7 @@ impl<'a> Parse<'a> for Cat<'a> {
         // CRC. Kept raw — see the field doc; typed CA view via ca_descriptors().
         let descriptors_end = total - CRC_LEN;
 
-        Ok(Cat {
+        Ok(CatSection {
             version_number,
             current_next_indicator,
             section_number,
@@ -138,7 +138,7 @@ impl<'a> Parse<'a> for Cat<'a> {
     }
 }
 
-impl Serialize for Cat<'_> {
+impl Serialize for CatSection<'_> {
     type Error = Error;
 
     fn serialized_len(&self) -> usize {
@@ -173,12 +173,12 @@ impl Serialize for Cat<'_> {
     }
 }
 
-impl<'a> Table<'a> for Cat<'a> {
+impl<'a> Table<'a> for CatSection<'a> {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Cat<'a> {
+impl<'a> crate::traits::TableDef<'a> for CatSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "CONDITIONAL_ACCESS";
 }
@@ -219,7 +219,7 @@ mod tests {
     #[test]
     fn parse_empty_cat_zero_descriptors() {
         let bytes = build_cat(5, &[]);
-        let cat = Cat::parse(&bytes).expect("parse");
+        let cat = CatSection::parse(&bytes).expect("parse");
         assert_eq!(cat.version_number, 5);
         assert!(cat.current_next_indicator);
         assert!(cat.descriptors.is_empty());
@@ -231,7 +231,7 @@ mod tests {
         let mut desc = Vec::new();
         desc.extend_from_slice(&ca_descriptor(0x0500, 0x0050));
         let bytes = build_cat(0, &desc);
-        let cat = Cat::parse(&bytes).unwrap();
+        let cat = CatSection::parse(&bytes).unwrap();
         let cas = cat.ca_descriptors();
         assert_eq!(cas.len(), 1);
         assert_eq!(cas[0].ca_system_id, 0x0500);
@@ -246,7 +246,7 @@ mod tests {
         desc.extend_from_slice(&ca_descriptor(0x0650, 0x0062));
         desc.extend_from_slice(&ca_descriptor(0x0100, 0x0080));
         let bytes = build_cat(2, &desc);
-        let cat = Cat::parse(&bytes).unwrap();
+        let cat = CatSection::parse(&bytes).unwrap();
         let cas = cat.ca_descriptors();
         assert_eq!(cas.len(), 3);
         assert_eq!(cas[0].ca_system_id, 0x0500);
@@ -259,7 +259,7 @@ mod tests {
     fn parse_rejects_wrong_table_id() {
         let mut bytes = build_cat(0, &[]);
         bytes[0] = 0x02; // PMT table_id
-        let err = Cat::parse(&bytes).unwrap_err();
+        let err = CatSection::parse(&bytes).unwrap_err();
         assert!(matches!(
             err,
             Error::UnexpectedTableId { table_id: 0x02, .. }
@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn parse_rejects_short_buffer() {
-        let err = Cat::parse(&[0x01, 0x00]).unwrap_err();
+        let err = CatSection::parse(&[0x01, 0x00]).unwrap_err();
         assert!(matches!(err, Error::BufferTooShort { .. }));
     }
 
@@ -281,7 +281,7 @@ mod tests {
         desc.extend_from_slice(&[0x12, 0x02, 0xAA, 0xBB]); // unknown tag 0x12, len 2
         desc.extend_from_slice(&ca_descriptor(0x0650, 0x0062));
         let bytes = build_cat(0, &desc);
-        let cat = Cat::parse(&bytes).unwrap();
+        let cat = CatSection::parse(&bytes).unwrap();
         let cas = cat.ca_descriptors();
         assert_eq!(cas.len(), 2);
         assert_eq!(cas[0].ca_system_id, 0x0500);
@@ -290,7 +290,7 @@ mod tests {
         assert_eq!(cat.descriptors.raw(), desc);
         let mut buf = vec![0u8; cat.serialized_len()];
         cat.serialize_into(&mut buf).unwrap();
-        let re = Cat::parse(&buf).unwrap();
+        let re = CatSection::parse(&buf).unwrap();
         assert_eq!(re.descriptors.raw(), desc);
     }
 
@@ -300,16 +300,16 @@ mod tests {
         desc.extend_from_slice(&ca_descriptor(0x0500, 0x0050));
         desc.extend_from_slice(&ca_descriptor(0x0650, 0x0062));
         let bytes = build_cat(3, &desc);
-        let cat = Cat::parse(&bytes).unwrap();
+        let cat = CatSection::parse(&bytes).unwrap();
         let mut buf = vec![0u8; cat.serialized_len()];
         cat.serialize_into(&mut buf).unwrap();
-        assert_eq!(Cat::parse(&buf).unwrap(), cat);
+        assert_eq!(CatSection::parse(&buf).unwrap(), cat);
     }
 
     #[test]
     fn table_trait_constants() {
-        assert_eq!(<Cat<'_> as Table>::TABLE_ID, 0x01);
-        assert_eq!(<Cat<'_> as Table>::PID, 0x0001);
+        assert_eq!(<CatSection<'_> as Table>::TABLE_ID, 0x01);
+        assert_eq!(<CatSection<'_> as Table>::PID, 0x0001);
     }
 
     /// CAT borrows its descriptor loop (3.0): the loop serializes as the
@@ -318,7 +318,7 @@ mod tests {
     #[test]
     fn serde_json_serializes_typed_loop() {
         let bytes = build_cat(1, &ca_descriptor(0x0500, 0x0050));
-        let cat = Cat::parse(&bytes).unwrap();
+        let cat = CatSection::parse(&bytes).unwrap();
         let v = serde_json::to_value(&cat).unwrap();
         let loop_ = v["descriptors"]
             .as_array()

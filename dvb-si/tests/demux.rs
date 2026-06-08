@@ -4,7 +4,7 @@
 
 use dvb_si::demux::{SiDemux, Stats};
 use dvb_si::pid::Pid;
-use dvb_si::tables::AnyTable;
+use dvb_si::tables::AnyTableSection;
 use dvb_si::ts::{TsHeader, TS_PACKET_SIZE};
 
 const LONG_FORM_EXTRA: usize = 5;
@@ -116,7 +116,10 @@ fn scenario2_follow_pat_to_typed_pmt() {
         .collect();
     assert_eq!(evts.len(), 1);
     assert_eq!(evts[0].pid(), Pid::new(0x0100));
-    assert!(matches!(evts[0].table().unwrap(), AnyTable::Pmt(_)));
+    assert!(matches!(
+        evts[0].table_section().unwrap(),
+        AnyTableSection::PmtSection(_)
+    ));
 }
 
 #[test]

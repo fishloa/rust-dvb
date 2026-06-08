@@ -18,13 +18,13 @@ const UTC_TIME_LEN: usize = 5;
 /// Time and Date Table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct Tdt {
+pub struct TdtSection {
     /// Raw 5-byte UTC time (16-bit MJD + 24-bit BCD HHMMSS) per
     /// EN 300 468 Annex C.
     pub utc_time_raw: [u8; 5],
 }
 
-impl Tdt {
+impl TdtSection {
     /// Decode the UTC time to a chrono DateTime when the `chrono` feature is on.
     #[cfg(feature = "chrono")]
     #[must_use]
@@ -68,7 +68,7 @@ fn mjd_to_ymd(mjd: u16) -> (i32, u32, u32) {
     (y as i32, m as u32, d as u32)
 }
 
-impl<'a> Parse<'a> for Tdt {
+impl<'a> Parse<'a> for TdtSection {
     type Error = crate::error::Error;
     fn parse(bytes: &'a [u8]) -> Result<Self> {
         let min_len = HEADER_LEN + UTC_TIME_LEN;
@@ -76,13 +76,13 @@ impl<'a> Parse<'a> for Tdt {
             return Err(Error::BufferTooShort {
                 need: min_len,
                 have: bytes.len(),
-                what: "Tdt",
+                what: "TdtSection",
             });
         }
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "Tdt",
+                what: "TdtSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -94,11 +94,11 @@ impl<'a> Parse<'a> for Tdt {
             });
         }
         let utc_time_raw = [bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]];
-        Ok(Tdt { utc_time_raw })
+        Ok(TdtSection { utc_time_raw })
     }
 }
 
-impl Serialize for Tdt {
+impl Serialize for TdtSection {
     type Error = crate::error::Error;
     fn serialized_len(&self) -> usize {
         HEADER_LEN + UTC_TIME_LEN
@@ -119,12 +119,12 @@ impl Serialize for Tdt {
     }
 }
 
-impl<'a> Table<'a> for Tdt {
+impl<'a> Table<'a> for TdtSection {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Tdt {
+impl<'a> crate::traits::TableDef<'a> for TdtSection {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "TIME_AND_DATE";
 }
@@ -136,7 +136,7 @@ mod tests {
     #[test]
     fn parse_extracts_utc_time_raw() {
         let bytes = [TABLE_ID, 0x70, 0x05, 0xE4, 0x09, 0x12, 0x34, 0x56];
-        let tdt = Tdt::parse(&bytes).unwrap();
+        let tdt = TdtSection::parse(&bytes).unwrap();
         assert_eq!(tdt.utc_time_raw, [0xE4, 0x09, 0x12, 0x34, 0x56]);
     }
 
@@ -144,7 +144,7 @@ mod tests {
     fn parse_rejects_wrong_tag() {
         let bytes = [0x71, 0x70, 0x05, 0, 0, 0, 0, 0];
         assert!(matches!(
-            Tdt::parse(&bytes).unwrap_err(),
+            TdtSection::parse(&bytes).unwrap_err(),
             Error::UnexpectedTableId { table_id: 0x71, .. }
         ));
     }
@@ -153,25 +153,25 @@ mod tests {
     fn parse_rejects_wrong_section_length() {
         let bytes = [TABLE_ID, 0x70, 0x04, 0, 0, 0, 0, 0];
         assert!(matches!(
-            Tdt::parse(&bytes).unwrap_err(),
+            TdtSection::parse(&bytes).unwrap_err(),
             Error::SectionLengthOverflow { .. }
         ));
     }
 
     #[test]
     fn serialize_round_trip() {
-        let tdt = Tdt {
+        let tdt = TdtSection {
             utc_time_raw: [0xE4, 0x09, 0x12, 0x34, 0x56],
         };
         let mut buf = vec![0u8; tdt.serialized_len()];
         tdt.serialize_into(&mut buf).unwrap();
-        let re = Tdt::parse(&buf).unwrap();
+        let re = TdtSection::parse(&buf).unwrap();
         assert_eq!(tdt, re);
     }
 
     #[test]
     fn utc_time_decodes_to_chrono() {
-        let tdt = Tdt {
+        let tdt = TdtSection {
             utc_time_raw: [0xEA, 0x19, 0x12, 0x34, 0x56],
         };
         let dt = tdt.utc_time();

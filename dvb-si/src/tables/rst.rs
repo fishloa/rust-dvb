@@ -45,12 +45,12 @@ pub struct RstEntry {
 /// Running Status Table (§5.2.8, Table 10).
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct Rst {
+pub struct RstSection {
     /// Entries in wire order.
     pub entries: Vec<RstEntry>,
 }
 
-impl<'a> Parse<'a> for Rst {
+impl<'a> Parse<'a> for RstSection {
     type Error = crate::error::Error;
 
     fn parse(bytes: &'a [u8]) -> Result<Self> {
@@ -58,13 +58,13 @@ impl<'a> Parse<'a> for Rst {
             return Err(Error::BufferTooShort {
                 need: HEADER_LEN,
                 have: bytes.len(),
-                what: "Rst",
+                what: "RstSection",
             });
         }
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "Rst",
+                what: "RstSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -94,11 +94,11 @@ impl<'a> Parse<'a> for Rst {
             });
             off += ENTRY_LEN;
         }
-        Ok(Rst { entries })
+        Ok(RstSection { entries })
     }
 }
 
-impl Serialize for Rst {
+impl Serialize for RstSection {
     type Error = crate::error::Error;
 
     fn serialized_len(&self) -> usize {
@@ -133,12 +133,12 @@ impl Serialize for Rst {
     }
 }
 
-impl<'a> Table<'a> for Rst {
+impl<'a> Table<'a> for RstSection {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Rst {
+impl<'a> crate::traits::TableDef<'a> for RstSection {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "RUNNING_STATUS";
 }
@@ -176,14 +176,14 @@ mod tests {
 
     #[test]
     fn parse_empty() {
-        let rst = Rst::parse(&build_rst(&[])).unwrap();
+        let rst = RstSection::parse(&build_rst(&[])).unwrap();
         assert!(rst.entries.is_empty());
     }
 
     #[test]
     fn parse_single_entry() {
         let e = entry(0x1234, 0x0001, 0xABCD, 0x4000, 4);
-        let rst = Rst::parse(&build_rst(&[e])).unwrap();
+        let rst = RstSection::parse(&build_rst(&[e])).unwrap();
         assert_eq!(rst.entries.len(), 1);
         assert_eq!(rst.entries[0], e);
         assert_eq!(rst.entries[0].running_status, 4); // running
@@ -196,7 +196,7 @@ mod tests {
             entry(0x0002, 0x2000, 0x0020, 0x0200, 4),
             entry(0x0003, 0x3000, 0x0030, 0x0300, 5),
         ];
-        let rst = Rst::parse(&build_rst(&es)).unwrap();
+        let rst = RstSection::parse(&build_rst(&es)).unwrap();
         assert_eq!(rst.entries, es);
     }
 
@@ -205,7 +205,7 @@ mod tests {
         let mut bytes = build_rst(&[]);
         bytes[0] = 0x72;
         assert!(matches!(
-            Rst::parse(&bytes).unwrap_err(),
+            RstSection::parse(&bytes).unwrap_err(),
             Error::UnexpectedTableId { table_id: 0x72, .. }
         ));
     }
@@ -213,7 +213,7 @@ mod tests {
     #[test]
     fn parse_rejects_short_buffer() {
         assert!(matches!(
-            Rst::parse(&[0x71, 0x70]).unwrap_err(),
+            RstSection::parse(&[0x71, 0x70]).unwrap_err(),
             Error::BufferTooShort { .. }
         ));
     }
@@ -223,7 +223,7 @@ mod tests {
         // section_length = 4 (not a multiple of 9)
         let bytes = [TABLE_ID, 0x70, 0x04, 0x00, 0x00, 0x00, 0x00];
         assert!(matches!(
-            Rst::parse(&bytes).unwrap_err(),
+            RstSection::parse(&bytes).unwrap_err(),
             Error::SectionLengthOverflow { .. }
         ));
     }
@@ -234,31 +234,31 @@ mod tests {
             entry(0xCAFE, 0xBEEF, 0x1234, 0x5678, 4),
             entry(0x0001, 0x0002, 0x0003, 0x0004, 5),
         ];
-        let rst = Rst::parse(&build_rst(&es)).unwrap();
+        let rst = RstSection::parse(&build_rst(&es)).unwrap();
         let mut buf = vec![0u8; rst.serialized_len()];
         rst.serialize_into(&mut buf).unwrap();
         assert_eq!(buf, build_rst(&es));
-        assert_eq!(Rst::parse(&buf).unwrap(), rst);
+        assert_eq!(RstSection::parse(&buf).unwrap(), rst);
     }
 
     #[test]
     fn serialize_empty_round_trip() {
-        let rst = Rst { entries: vec![] };
+        let rst = RstSection { entries: vec![] };
         let mut buf = vec![0u8; rst.serialized_len()];
         rst.serialize_into(&mut buf).unwrap();
-        assert_eq!(Rst::parse(&buf).unwrap(), rst);
+        assert_eq!(RstSection::parse(&buf).unwrap(), rst);
     }
 
     #[test]
     fn table_trait_constants() {
-        assert_eq!(<Rst as Table>::TABLE_ID, 0x71);
-        assert_eq!(<Rst as Table>::PID, 0x0013);
+        assert_eq!(<RstSection as Table>::TABLE_ID, 0x71);
+        assert_eq!(<RstSection as Table>::PID, 0x0013);
     }
 
     #[test]
     fn serde_json_serializes_fields() {
         // Serialize-only: assert the emitted JSON re-parses (serialize-stable).
-        let rst = Rst::parse(&build_rst(&[entry(1, 2, 3, 4, 4)])).unwrap();
+        let rst = RstSection::parse(&build_rst(&[entry(1, 2, 3, 4, 4)])).unwrap();
         let j = serde_json::to_string(&rst).unwrap();
         let v: serde_json::Value = serde_json::from_str(&j).unwrap();
         assert_eq!(v["entries"][0]["service_id"], 3);

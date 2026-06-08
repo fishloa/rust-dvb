@@ -51,7 +51,7 @@ const CRC_LEN: usize = 4;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
-pub struct Cit<'a> {
+pub struct CitSection<'a> {
     /// `private_indicator` bit from byte 1.
     pub private_indicator: bool,
 
@@ -90,7 +90,7 @@ pub struct Cit<'a> {
 
 // ── Parse ─────────────────────────────────────────────────────────────────────
 
-impl<'a> Parse<'a> for Cit<'a> {
+impl<'a> Parse<'a> for CitSection<'a> {
     type Error = crate::error::Error;
 
     fn parse(bytes: &'a [u8]) -> Result<Self> {
@@ -99,7 +99,7 @@ impl<'a> Parse<'a> for Cit<'a> {
             return Err(Error::BufferTooShort {
                 need: MIN_SECTION_LEN,
                 have: bytes.len(),
-                what: "Cit",
+                what: "CitSection",
             });
         }
 
@@ -107,7 +107,7 @@ impl<'a> Parse<'a> for Cit<'a> {
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "Cit",
+                what: "CitSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -154,7 +154,7 @@ impl<'a> Parse<'a> for Cit<'a> {
         // Raw CRID entry loop: everything between prepend_strings and the CRC.
         let crid_entries = &bytes[ps_end..payload_end];
 
-        Ok(Cit {
+        Ok(CitSection {
             private_indicator,
             service_id,
             version_number,
@@ -171,7 +171,7 @@ impl<'a> Parse<'a> for Cit<'a> {
 
 // ── Serialize ─────────────────────────────────────────────────────────────────
 
-impl Serialize for Cit<'_> {
+impl Serialize for CitSection<'_> {
     type Error = crate::error::Error;
 
     fn serialized_len(&self) -> usize {
@@ -240,12 +240,12 @@ impl Serialize for Cit<'_> {
 
 // ── Table impl ────────────────────────────────────────────────────────────────
 
-impl<'a> Table<'a> for Cit<'a> {
+impl<'a> Table<'a> for CitSection<'a> {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Cit<'a> {
+impl<'a> crate::traits::TableDef<'a> for CitSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "CONTENT_IDENTIFIER";
 }
@@ -272,7 +272,7 @@ mod tests {
         prepend_strings: &[u8],
         crid_entries: &[u8],
     ) -> Vec<u8> {
-        let cit = Cit {
+        let cit = CitSection {
             private_indicator: false,
             service_id,
             version_number: version,
@@ -296,7 +296,7 @@ mod tests {
         // structure but have no current programme mapping.
         let prepend = b"CRID://example.com\x00";
         let bytes = build_cit(0x1234, 3, true, 0, 0, 0x0064, 0x0002, prepend, &[]);
-        let cit = Cit::parse(&bytes).unwrap();
+        let cit = CitSection::parse(&bytes).unwrap();
 
         assert_eq!(cit.service_id, 0x1234);
         assert_eq!(cit.version_number, 3);
@@ -340,7 +340,7 @@ mod tests {
             prepend,
             &crid_entries,
         );
-        let cit = Cit::parse(&bytes).unwrap();
+        let cit = CitSection::parse(&bytes).unwrap();
 
         assert_eq!(cit.service_id, 0xABCD);
         assert_eq!(cit.version_number, 7);
@@ -357,7 +357,7 @@ mod tests {
         let mut bytes = build_cit(0x0001, 0, true, 0, 0, 0x0001, 0x0001, &[], &[]);
         bytes[0] = 0x40; // Not 0x77.
         assert!(matches!(
-            Cit::parse(&bytes).unwrap_err(),
+            CitSection::parse(&bytes).unwrap_err(),
             Error::UnexpectedTableId { table_id: 0x40, .. }
         ));
     }
@@ -367,7 +367,7 @@ mod tests {
         // Hand-craft a buffer that is shorter than MIN_SECTION_LEN.
         let short = [TABLE_ID, 0x00];
         assert!(matches!(
-            Cit::parse(&short).unwrap_err(),
+            CitSection::parse(&short).unwrap_err(),
             Error::BufferTooShort { .. }
         ));
     }
@@ -380,7 +380,7 @@ mod tests {
         bytes[1] = (bytes[1] & 0xF0) | ((fake_sl >> 8) as u8 & 0x0F);
         bytes[2] = (fake_sl & 0xFF) as u8;
         assert!(matches!(
-            Cit::parse(&bytes).unwrap_err(),
+            CitSection::parse(&bytes).unwrap_err(),
             Error::SectionLengthOverflow { .. }
         ));
     }
@@ -398,7 +398,7 @@ mod tests {
             v
         };
 
-        let original = Cit {
+        let original = CitSection {
             private_indicator: true,
             service_id: 0x4321,
             version_number: 15,
@@ -413,7 +413,7 @@ mod tests {
 
         let mut buf = vec![0u8; original.serialized_len()];
         original.serialize_into(&mut buf).unwrap();
-        let parsed = Cit::parse(&buf).unwrap();
+        let parsed = CitSection::parse(&buf).unwrap();
 
         assert_eq!(parsed.private_indicator, original.private_indicator);
         assert_eq!(parsed.service_id, original.service_id);
@@ -432,7 +432,7 @@ mod tests {
 
     #[test]
     fn serialize_rejects_output_buffer_too_small() {
-        let cit = Cit {
+        let cit = CitSection {
             private_indicator: false,
             service_id: 0x0001,
             version_number: 0,

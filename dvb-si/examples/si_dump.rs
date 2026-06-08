@@ -14,14 +14,14 @@
 use std::process::ExitCode;
 
 use dvb_si::demux::SiDemux;
-use dvb_si::tables::AnyTable;
+use dvb_si::tables::AnyTableSection;
 use dvb_si::ts::TS_PACKET_SIZE;
 
-/// Label for an `AnyTable` — the macro-generated `name()`, with the table_id
+/// Label for an `AnyTableSection` — the macro-generated `name()`, with the table_id
 /// appended for unknowns.
-fn table_name(table: &AnyTable<'_>) -> String {
+fn table_name(table: &AnyTableSection<'_>) -> String {
     match table {
-        AnyTable::Unknown { table_id, .. } => format!("UNKNOWN(0x{table_id:02X})"),
+        AnyTableSection::Unknown { table_id, .. } => format!("UNKNOWN(0x{table_id:02X})"),
         t => t.name().to_string(),
     }
 }
@@ -64,7 +64,7 @@ fn main() -> ExitCode {
             continue; // skip non-aligned / short tail
         }
         for event in demux.feed(chunk) {
-            match event.table() {
+            match event.table_section() {
                 Ok(table) => {
                     if json {
                         match serde_json::to_string_pretty(&table) {

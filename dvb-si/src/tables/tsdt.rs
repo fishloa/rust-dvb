@@ -21,7 +21,7 @@ const CRC_LEN: usize = 4;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
-pub struct Tsdt<'a> {
+pub struct TsdtSection<'a> {
     /// 16-bit table_id_extension.
     pub table_id_extension: u16,
     /// 5-bit version_number.
@@ -37,7 +37,7 @@ pub struct Tsdt<'a> {
     pub descriptors: DescriptorLoop<'a>,
 }
 
-impl<'a> Parse<'a> for Tsdt<'a> {
+impl<'a> Parse<'a> for TsdtSection<'a> {
     type Error = crate::error::Error;
 
     fn parse(bytes: &'a [u8]) -> Result<Self> {
@@ -46,14 +46,14 @@ impl<'a> Parse<'a> for Tsdt<'a> {
             return Err(Error::BufferTooShort {
                 need: min_len,
                 have: bytes.len(),
-                what: "Tsdt",
+                what: "TsdtSection",
             });
         }
 
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "Tsdt",
+                what: "TsdtSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -78,7 +78,7 @@ impl<'a> Parse<'a> for Tsdt<'a> {
         let desc_start = MIN_HEADER_LEN + EXTENSION_HEADER_LEN;
         let desc_end = total - CRC_LEN;
 
-        Ok(Tsdt {
+        Ok(TsdtSection {
             table_id_extension,
             version_number,
             current_next_indicator,
@@ -89,7 +89,7 @@ impl<'a> Parse<'a> for Tsdt<'a> {
     }
 }
 
-impl Serialize for Tsdt<'_> {
+impl Serialize for TsdtSection<'_> {
     type Error = crate::error::Error;
 
     fn serialized_len(&self) -> usize {
@@ -126,12 +126,12 @@ impl Serialize for Tsdt<'_> {
     }
 }
 
-impl<'a> Table<'a> for Tsdt<'a> {
+impl<'a> Table<'a> for TsdtSection<'a> {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Tsdt<'a> {
+impl<'a> crate::traits::TableDef<'a> for TsdtSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "TRANSPORT_STREAM_DESCRIPTION";
 }
@@ -160,21 +160,21 @@ mod tests {
         let mut bytes = build_tsdt(0x1234, 5, &[]);
         bytes[0] = 0x02;
         assert!(matches!(
-            Tsdt::parse(&bytes).unwrap_err(),
+            TsdtSection::parse(&bytes).unwrap_err(),
             Error::UnexpectedTableId { table_id: 0x02, .. }
         ));
     }
 
     #[test]
     fn parse_rejects_short_buffer() {
-        let err = Tsdt::parse(&[0x03, 0xB0]).unwrap_err();
+        let err = TsdtSection::parse(&[0x03, 0xB0]).unwrap_err();
         assert!(matches!(err, Error::BufferTooShort { .. }));
     }
 
     #[test]
     fn parse_empty_descriptor_loop() {
         let bytes = build_tsdt(0x1234, 5, &[]);
-        let tsdt = Tsdt::parse(&bytes).unwrap();
+        let tsdt = TsdtSection::parse(&bytes).unwrap();
         assert_eq!(tsdt.table_id_extension, 0x1234);
         assert_eq!(tsdt.version_number, 5);
         assert!(tsdt.current_next_indicator);
@@ -187,7 +187,7 @@ mod tests {
     fn parse_with_descriptors() {
         let descriptors = [0x01, 0x03, 0xAA, 0xBB, 0xCC];
         let bytes = build_tsdt(0xABCD, 7, &descriptors);
-        let tsdt = Tsdt::parse(&bytes).unwrap();
+        let tsdt = TsdtSection::parse(&bytes).unwrap();
         assert_eq!(tsdt.table_id_extension, 0xABCD);
         assert_eq!(tsdt.version_number, 7);
         assert_eq!(tsdt.descriptors.raw(), &descriptors[..]);
@@ -197,27 +197,27 @@ mod tests {
     fn serialize_round_trip() {
         let descriptors = [0x4D, 0x02, 0x01, 0x02];
         let bytes = build_tsdt(0xCAFE, 3, &descriptors);
-        let tsdt = Tsdt::parse(&bytes).unwrap();
+        let tsdt = TsdtSection::parse(&bytes).unwrap();
         let mut buf = vec![0u8; tsdt.serialized_len()];
         tsdt.serialize_into(&mut buf).unwrap();
-        let re = Tsdt::parse(&buf).unwrap();
+        let re = TsdtSection::parse(&buf).unwrap();
         assert_eq!(tsdt, re);
     }
 
     #[test]
     fn serialize_round_trip_empty() {
         let bytes = build_tsdt(0x0001, 0, &[]);
-        let tsdt = Tsdt::parse(&bytes).unwrap();
+        let tsdt = TsdtSection::parse(&bytes).unwrap();
         let mut buf = vec![0u8; tsdt.serialized_len()];
         tsdt.serialize_into(&mut buf).unwrap();
-        let re = Tsdt::parse(&buf).unwrap();
+        let re = TsdtSection::parse(&buf).unwrap();
         assert_eq!(tsdt, re);
     }
 
     #[test]
     fn table_trait_constants() {
-        assert_eq!(<Tsdt<'_> as Table>::TABLE_ID, 0x03);
-        assert_eq!(<Tsdt<'_> as Table>::PID, 0x0002);
+        assert_eq!(<TsdtSection<'_> as Table>::TABLE_ID, 0x03);
+        assert_eq!(<TsdtSection<'_> as Table>::PID, 0x0002);
     }
 
     #[cfg(feature = "serde")]
@@ -227,7 +227,7 @@ mod tests {
         // emits the typed descriptor sequence (here a short_event, tag 0x4D).
         let descriptors = [0x4D, 0x02, b'e', b'n']; // valid short_event header bytes
         let bytes = build_tsdt(0xDEAD, 9, &descriptors);
-        let tsdt = Tsdt::parse(&bytes).unwrap();
+        let tsdt = TsdtSection::parse(&bytes).unwrap();
         let v = serde_json::to_value(&tsdt).unwrap();
         assert!(
             v["descriptors"].is_array(),

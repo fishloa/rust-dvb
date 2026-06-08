@@ -7,7 +7,7 @@
 //! be `0b0` (§5.2.6: "This 1-bit field shall be set to 0b0") yet the section
 //! still ends with a CRC_32. Do not route TOT bytes through the generic
 //! [`crate::section::Section`] short-form path — it would fold the CRC into
-//! the payload. Parse with [`Tot::parse`] directly.
+//! the payload. Parse with [`TotSection::parse`] directly.
 
 use crate::descriptors::DescriptorLoop;
 use crate::error::{Error, Result};
@@ -28,7 +28,7 @@ const CRC_LEN: usize = 4;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
-pub struct Tot<'a> {
+pub struct TotSection<'a> {
     /// Raw 5-byte UTC time (16-bit MJD + 24-bit BCD HHMMSS).
     pub utc_time_raw: [u8; 5],
     /// Raw descriptor bytes (typically local_time_offset_descriptor tag 0x58).
@@ -37,7 +37,7 @@ pub struct Tot<'a> {
     pub descriptors: DescriptorLoop<'a>,
 }
 
-impl<'a> Parse<'a> for Tot<'a> {
+impl<'a> Parse<'a> for TotSection<'a> {
     type Error = crate::error::Error;
     fn parse(bytes: &'a [u8]) -> Result<Self> {
         let min_len = HEADER_LEN + UTC_TIME_LEN + DESC_LOOP_LEN_FIELD + CRC_LEN;
@@ -45,13 +45,13 @@ impl<'a> Parse<'a> for Tot<'a> {
             return Err(Error::BufferTooShort {
                 need: min_len,
                 have: bytes.len(),
-                what: "Tot",
+                what: "TotSection",
             });
         }
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "Tot",
+                what: "TotSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -74,14 +74,14 @@ impl<'a> Parse<'a> for Tot<'a> {
                 available: total - CRC_LEN - d_start,
             });
         }
-        Ok(Tot {
+        Ok(TotSection {
             utc_time_raw,
             descriptors: DescriptorLoop::new(&bytes[d_start..d_end]),
         })
     }
 }
 
-impl Serialize for Tot<'_> {
+impl Serialize for TotSection<'_> {
     type Error = crate::error::Error;
     fn serialized_len(&self) -> usize {
         HEADER_LEN + UTC_TIME_LEN + DESC_LOOP_LEN_FIELD + self.descriptors.len() + CRC_LEN
@@ -113,12 +113,12 @@ impl Serialize for Tot<'_> {
     }
 }
 
-impl<'a> Table<'a> for Tot<'a> {
+impl<'a> Table<'a> for TotSection<'a> {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Tot<'a> {
+impl<'a> crate::traits::TableDef<'a> for TotSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "TIME_OFFSET";
 }
@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn parse_with_no_descriptors() {
         let bytes = build_tot(&[]);
-        let tot = Tot::parse(&bytes).unwrap();
+        let tot = TotSection::parse(&bytes).unwrap();
         assert_eq!(tot.utc_time_raw, [0xE4, 0x09, 0x12, 0x34, 0x56]);
         assert_eq!(tot.descriptors.raw(), &[] as &[u8]);
     }
@@ -158,7 +158,7 @@ mod tests {
             0x00,
         ];
         let bytes = build_tot(&lto);
-        let tot = Tot::parse(&bytes).unwrap();
+        let tot = TotSection::parse(&bytes).unwrap();
         assert_eq!(tot.descriptors.raw(), &lto[..]);
     }
 
@@ -167,7 +167,7 @@ mod tests {
         let mut bytes = build_tot(&[]);
         bytes[0] = 0x70;
         assert!(matches!(
-            Tot::parse(&bytes).unwrap_err(),
+            TotSection::parse(&bytes).unwrap_err(),
             Error::UnexpectedTableId { table_id: 0x70, .. }
         ));
     }
@@ -176,10 +176,10 @@ mod tests {
     fn serialize_round_trip() {
         let lto = [0x58u8, 0];
         let bytes = build_tot(&lto);
-        let tot = Tot::parse(&bytes).unwrap();
+        let tot = TotSection::parse(&bytes).unwrap();
         let mut buf = vec![0u8; tot.serialized_len()];
         tot.serialize_into(&mut buf).unwrap();
-        let re = Tot::parse(&buf).unwrap();
+        let re = TotSection::parse(&buf).unwrap();
         assert_eq!(tot, re);
     }
 }

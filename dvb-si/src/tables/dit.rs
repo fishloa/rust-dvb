@@ -20,12 +20,12 @@ const BODY_LEN: usize = 1;
 /// Discontinuity Information Table (§7.1.2, Table 163).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct Dit {
+pub struct DitSection {
     /// When set, a discontinuity in the transport stream occurs at this point.
     pub transition_flag: bool,
 }
 
-impl<'a> Parse<'a> for Dit {
+impl<'a> Parse<'a> for DitSection {
     type Error = crate::error::Error;
 
     fn parse(bytes: &'a [u8]) -> Result<Self> {
@@ -34,13 +34,13 @@ impl<'a> Parse<'a> for Dit {
             return Err(Error::BufferTooShort {
                 need: min_len,
                 have: bytes.len(),
-                what: "Dit",
+                what: "DitSection",
             });
         }
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "Dit",
+                what: "DitSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -53,11 +53,11 @@ impl<'a> Parse<'a> for Dit {
         }
         // transition_flag is the top bit of the body byte; rest is reserved.
         let transition_flag = bytes[3] & 0x80 != 0;
-        Ok(Dit { transition_flag })
+        Ok(DitSection { transition_flag })
     }
 }
 
-impl Serialize for Dit {
+impl Serialize for DitSection {
     type Error = crate::error::Error;
 
     fn serialized_len(&self) -> usize {
@@ -83,12 +83,12 @@ impl Serialize for Dit {
     }
 }
 
-impl<'a> Table<'a> for Dit {
+impl<'a> Table<'a> for DitSection {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Dit {
+impl<'a> crate::traits::TableDef<'a> for DitSection {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "DISCONTINUITY_INFORMATION";
 }
@@ -101,14 +101,14 @@ mod tests {
     fn parse_transition_flag_set() {
         // section_length=1, body byte 0x80 → transition_flag=1
         let bytes = [TABLE_ID, 0x70, 0x01, 0x80];
-        let dit = Dit::parse(&bytes).unwrap();
+        let dit = DitSection::parse(&bytes).unwrap();
         assert!(dit.transition_flag);
     }
 
     #[test]
     fn parse_transition_flag_clear() {
         let bytes = [TABLE_ID, 0x70, 0x01, 0x7F];
-        let dit = Dit::parse(&bytes).unwrap();
+        let dit = DitSection::parse(&bytes).unwrap();
         assert!(!dit.transition_flag);
     }
 
@@ -116,7 +116,7 @@ mod tests {
     fn parse_rejects_wrong_tag() {
         let bytes = [0x7F, 0x70, 0x01, 0x80];
         assert!(matches!(
-            Dit::parse(&bytes).unwrap_err(),
+            DitSection::parse(&bytes).unwrap_err(),
             Error::UnexpectedTableId { table_id: 0x7F, .. }
         ));
     }
@@ -125,7 +125,7 @@ mod tests {
     fn parse_rejects_wrong_section_length() {
         let bytes = [TABLE_ID, 0x70, 0x02, 0x80, 0x00];
         assert!(matches!(
-            Dit::parse(&bytes).unwrap_err(),
+            DitSection::parse(&bytes).unwrap_err(),
             Error::SectionLengthOverflow { .. }
         ));
     }
@@ -134,36 +134,36 @@ mod tests {
     fn parse_rejects_short_buffer() {
         let bytes = [TABLE_ID, 0x70];
         assert!(matches!(
-            Dit::parse(&bytes).unwrap_err(),
+            DitSection::parse(&bytes).unwrap_err(),
             Error::BufferTooShort { .. }
         ));
     }
 
     #[test]
     fn serialize_round_trip_set() {
-        let dit = Dit {
+        let dit = DitSection {
             transition_flag: true,
         };
         let mut buf = vec![0u8; dit.serialized_len()];
         dit.serialize_into(&mut buf).unwrap();
         assert_eq!(buf, [TABLE_ID, 0x70, 0x01, 0xFF]);
-        assert_eq!(Dit::parse(&buf).unwrap(), dit);
+        assert_eq!(DitSection::parse(&buf).unwrap(), dit);
     }
 
     #[test]
     fn serialize_round_trip_clear() {
-        let dit = Dit {
+        let dit = DitSection {
             transition_flag: false,
         };
         let mut buf = vec![0u8; dit.serialized_len()];
         dit.serialize_into(&mut buf).unwrap();
         assert_eq!(buf, [TABLE_ID, 0x70, 0x01, 0x7F]);
-        assert_eq!(Dit::parse(&buf).unwrap(), dit);
+        assert_eq!(DitSection::parse(&buf).unwrap(), dit);
     }
 
     #[test]
     fn serialize_into_too_small_buffer() {
-        let dit = Dit {
+        let dit = DitSection {
             transition_flag: false,
         };
         let mut buf = [0u8; 3];
@@ -176,7 +176,7 @@ mod tests {
     #[test]
     fn serialized_len_is_four() {
         assert_eq!(
-            Dit {
+            DitSection {
                 transition_flag: false
             }
             .serialized_len(),
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn serde_json_serializes_fields() {
         // Serialize-only: assert the emitted JSON carries the field.
-        let dit = Dit {
+        let dit = DitSection {
             transition_flag: true,
         };
         let v = serde_json::to_value(dit).unwrap();
@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn table_trait_constants() {
-        assert_eq!(Dit::TABLE_ID, 0x7E);
-        assert_eq!(Dit::PID, 0x001E);
+        assert_eq!(DitSection::TABLE_ID, 0x7E);
+        assert_eq!(DitSection::PID, 0x001E);
     }
 }

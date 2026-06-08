@@ -51,7 +51,7 @@ pub struct SitService<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
-pub struct Sit<'a> {
+pub struct SitSection<'a> {
     /// 16-bit field after section_length — reserved_future_use for the SIT
     /// (conventionally 0xFFFF); retained verbatim.
     pub table_id_extension: u16,
@@ -70,7 +70,7 @@ pub struct Sit<'a> {
     pub services: Vec<SitService<'a>>,
 }
 
-impl<'a> Parse<'a> for Sit<'a> {
+impl<'a> Parse<'a> for SitSection<'a> {
     type Error = crate::error::Error;
 
     fn parse(bytes: &'a [u8]) -> Result<Self> {
@@ -79,13 +79,13 @@ impl<'a> Parse<'a> for Sit<'a> {
             return Err(Error::BufferTooShort {
                 need: min_len,
                 have: bytes.len(),
-                what: "Sit",
+                what: "SitSection",
             });
         }
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "Sit",
+                what: "SitSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -148,7 +148,7 @@ impl<'a> Parse<'a> for Sit<'a> {
             pos = desc_end;
         }
 
-        Ok(Sit {
+        Ok(SitSection {
             table_id_extension,
             version_number,
             current_next_indicator,
@@ -160,7 +160,7 @@ impl<'a> Parse<'a> for Sit<'a> {
     }
 }
 
-impl Serialize for Sit<'_> {
+impl Serialize for SitSection<'_> {
     type Error = crate::error::Error;
 
     fn serialized_len(&self) -> usize {
@@ -232,12 +232,12 @@ impl Serialize for Sit<'_> {
     }
 }
 
-impl<'a> Table<'a> for Sit<'a> {
+impl<'a> Table<'a> for SitSection<'a> {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Sit<'a> {
+impl<'a> crate::traits::TableDef<'a> for SitSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "SELECTION_INFORMATION";
 }
@@ -280,7 +280,7 @@ mod tests {
         let mut bytes = build_sit(0x1234, 5, &[], &[]);
         bytes[0] = 0x7E;
         assert!(matches!(
-            Sit::parse(&bytes).unwrap_err(),
+            SitSection::parse(&bytes).unwrap_err(),
             Error::UnexpectedTableId { table_id: 0x7E, .. }
         ));
     }
@@ -288,7 +288,7 @@ mod tests {
     #[test]
     fn parse_rejects_short_buffer() {
         assert!(matches!(
-            Sit::parse(&[0x7F, 0xB0]).unwrap_err(),
+            SitSection::parse(&[0x7F, 0xB0]).unwrap_err(),
             Error::BufferTooShort { .. }
         ));
     }
@@ -308,7 +308,7 @@ mod tests {
     #[test]
     fn parse_empty() {
         let bytes = build_sit(0x1234, 5, &[], &[]);
-        let sit = Sit::parse(&bytes).unwrap();
+        let sit = SitSection::parse(&bytes).unwrap();
         assert_eq!(sit.table_id_extension, 0x1234);
         assert_eq!(sit.version_number, 5);
         assert!(sit.current_next_indicator);
@@ -322,7 +322,7 @@ mod tests {
         let mut sl = service_entry(0x0001, 4, &[0x48, 0x02, 0xAA, 0xBB]);
         sl.extend(service_entry(0x0002, 2, &[]));
         let bytes = build_sit(0xABCD, 7, &ti, &sl);
-        let sit = Sit::parse(&bytes).unwrap();
+        let sit = SitSection::parse(&bytes).unwrap();
         assert_eq!(sit.transmission_info_descriptors.raw(), &ti[..]);
         assert_eq!(sit.services.len(), 2);
         assert_eq!(sit.services[0].service_id, 0x0001);
@@ -342,7 +342,7 @@ mod tests {
         let ti = [0x4D, 0x00];
         let bytes = build_sit(0x1234, 0, &ti, &[0x00, 0x01, 0xC0]);
         assert!(matches!(
-            Sit::parse(&bytes).unwrap_err(),
+            SitSection::parse(&bytes).unwrap_err(),
             Error::BufferTooShort { .. }
         ));
     }
@@ -353,7 +353,7 @@ mod tests {
         let service = [0x00, 0x01, 0x80, 0x05, 0xFF];
         let bytes = build_sit(0x1234, 0, &[], &service);
         assert!(matches!(
-            Sit::parse(&bytes).unwrap_err(),
+            SitSection::parse(&bytes).unwrap_err(),
             Error::SectionLengthOverflow { .. }
         ));
     }
@@ -361,7 +361,7 @@ mod tests {
     #[test]
     fn serialize_round_trip_two_services() {
         let ti = [0x4D, 0x02, 0x01, 0x02];
-        let sit = Sit {
+        let sit = SitSection {
             table_id_extension: 0xCAFE,
             version_number: 3,
             current_next_indicator: true,
@@ -384,23 +384,23 @@ mod tests {
         let mut buf = vec![0u8; sit.serialized_len()];
         sit.serialize_into(&mut buf).unwrap();
         // Byte-exact: re-parse must equal the original.
-        assert_eq!(Sit::parse(&buf).unwrap(), sit);
+        assert_eq!(SitSection::parse(&buf).unwrap(), sit);
     }
 
     #[test]
     fn serialize_round_trip_empty() {
         let bytes = build_sit(0x0001, 0, &[], &[]);
-        let sit = Sit::parse(&bytes).unwrap();
+        let sit = SitSection::parse(&bytes).unwrap();
         let mut buf = vec![0u8; sit.serialized_len()];
         sit.serialize_into(&mut buf).unwrap();
-        assert_eq!(Sit::parse(&buf).unwrap(), sit);
+        assert_eq!(SitSection::parse(&buf).unwrap(), sit);
     }
 
     #[test]
     fn serialize_rejects_over_range_service_desc_len() {
         // A service descriptor loop longer than the 12-bit field can hold.
         let big = vec![0u8; MAX_SERVICE_DESC_LEN + 1];
-        let sit = Sit {
+        let sit = SitSection {
             table_id_extension: 0x0001,
             version_number: 0,
             current_next_indicator: true,
@@ -422,8 +422,8 @@ mod tests {
 
     #[test]
     fn table_trait_constants() {
-        assert_eq!(<Sit<'_> as Table>::TABLE_ID, 0x7F);
-        assert_eq!(<Sit<'_> as Table>::PID, 0x001F);
+        assert_eq!(<SitSection<'_> as Table>::TABLE_ID, 0x7F);
+        assert_eq!(<SitSection<'_> as Table>::PID, 0x001F);
     }
 
     #[cfg(feature = "serde")]
@@ -434,7 +434,7 @@ mod tests {
         let mut sl = service_entry(0x0001, 4, &[0x48, 0x02, 0xAA, 0xBB]);
         sl.extend(service_entry(0x0002, 2, &[]));
         let bytes = build_sit(0xDEAD, 9, &[0x4D, 0x00], &sl);
-        let sit = Sit::parse(&bytes).unwrap();
+        let sit = SitSection::parse(&bytes).unwrap();
         let v = serde_json::to_value(&sit).unwrap();
         assert!(
             v["transmission_info_descriptors"].is_array(),

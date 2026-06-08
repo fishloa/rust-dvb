@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [4.0.0] — 2026-06-08
+
+Version-lockstep release with the workspace (the `dvb-si` 4.0 section/table
+split). No functional change to this crate; the crate-root chain diagram now
+names `AnyTableSection` instead of `AnyTable` to match the renamed `dvb-si`
+dispatcher.
+
 ## [3.1.2] — 2026-06-07
 
 Version-lockstep release with the workspace (dvb-si spanning-into-PUSI section fix); no changes to this crate.

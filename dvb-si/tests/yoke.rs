@@ -8,11 +8,11 @@ use std::sync::Arc;
 use dvb_common::{Parse, Serialize};
 use dvb_si::descriptors::DescriptorLoop;
 use dvb_si::owned::Owned;
-use dvb_si::tables::sdt::{Sdt, SdtKind, SdtService};
+use dvb_si::tables::sdt::{SdtKind, SdtSection, SdtService};
 
 /// Build a minimal two-service SDT section through the serializer.
 fn sdt_section() -> Vec<u8> {
-    let sdt = Sdt {
+    let sdt = SdtSection {
         kind: SdtKind::Actual,
         transport_stream_id: 0x1234,
         version_number: 3,
@@ -48,10 +48,10 @@ fn sdt_section() -> Vec<u8> {
 fn owned_outlives_source_vec() {
     // The source `Vec<u8>` is consumed into the Arc cart and dropped from this
     // scope; the owned view must keep working afterwards.
-    let owned: Owned<Sdt<'static>> = {
+    let owned: Owned<SdtSection<'static>> = {
         let source: Vec<u8> = sdt_section();
         let cart: Arc<[u8]> = Arc::from(source); // `source` moved/consumed here
-        Owned::try_new(cart, |b| Sdt::parse(b)).unwrap()
+        Owned::try_new(cart, |b| SdtSection::parse(b)).unwrap()
     };
 
     let sdt = owned.get();
@@ -65,7 +65,7 @@ fn owned_outlives_source_vec() {
 #[test]
 fn owned_crosses_thread_boundary() {
     let cart: Arc<[u8]> = Arc::from(sdt_section());
-    let owned: Owned<Sdt<'static>> = Owned::try_new(cart, |b| Sdt::parse(b)).unwrap();
+    let owned: Owned<SdtSection<'static>> = Owned::try_new(cart, |b| SdtSection::parse(b)).unwrap();
 
     let handle = std::thread::spawn(move || {
         let sdt = owned.get();
@@ -80,7 +80,7 @@ fn owned_crosses_thread_boundary() {
 fn clone_is_cheap_and_both_read() {
     let cart: Arc<[u8]> = Arc::from(sdt_section());
     let backing_ptr = cart.as_ptr();
-    let owned: Owned<Sdt<'static>> = Owned::try_new(cart, |b| Sdt::parse(b)).unwrap();
+    let owned: Owned<SdtSection<'static>> = Owned::try_new(cart, |b| SdtSection::parse(b)).unwrap();
 
     let clone = owned.clone();
 

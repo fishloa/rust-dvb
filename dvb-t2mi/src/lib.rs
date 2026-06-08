@@ -50,7 +50,7 @@
 //!                          dvb_bbframe::Bbheader::parse + up_iter
 //!                                   │ inner TS packets
 //!                                   ▼
-//!                          dvb_si::demux::SiDemux ─▶ AnyTable
+//!                          dvb_si::demux::SiDemux ─▶ AnyTableSection
 //! ```
 //!
 //! A complete, working version of this chain (synthetic fixture, every layer

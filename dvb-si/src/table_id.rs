@@ -1,10 +1,14 @@
-//! `TableId` enum — typed table_id byte values.
+//! `TableId` enum: typed `table_id` byte values.
 //!
 //! Source: ETSI EN 300 468 §5.1.3 Table 2 plus ISO/IEC 13818-1 for MPEG tables.
 
 use num_enum::TryFromPrimitive;
 
 /// Typed `table_id` enumeration.
+///
+/// Variants use Rust CamelCase in 4.0. They intentionally do not carry the
+/// `Section` suffix; that suffix belongs to parser types such as
+/// [`crate::tables::nit::NitSection`].
 ///
 /// Tables that occupy a range of values (EIT schedule 0x50..=0x5F and 0x60..=0x6F)
 /// are not listed as enum variants; see [`Self::eit_schedule_actual_segment`] and

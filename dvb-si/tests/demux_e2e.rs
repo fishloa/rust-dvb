@@ -5,7 +5,7 @@
 //! - `tnt-5w-12732v-isi6-10s.ts` — 10 s satellite capture (ISI 6)
 //!
 //! For each capture the tests assert:
-//! 1. Exact set of `AnyTable` variant names produced (discovery → pin).
+//! 1. Exact set of `AnyTableSection` variant names produced (discovery → pin).
 //! 2. Version-gate proof: second pass through the SAME demux emits 0 new
 //!    events (or a strictly bounded number for carousel churn — see comment).
 //! 3. Decoded-JSON acceptance: a service_descriptor found in an SDT service
@@ -13,7 +13,7 @@
 //!    (EIT short_event is used for tnt-5w since that capture carries EIT; the
 //!    M6 capture is too short to include SDT/EIT, so the JSON test is only run
 //!    against the tnt-5w fixture).
-//! 4. Pmt in the pinned set also proves PAT-follow (PMT PIDs are only discoverable via the PAT).
+//! 4. PmtSection in the pinned set also proves PAT-follow (PMT PIDs are only discoverable via the PAT).
 //! 5. Stats sanity: `crc_failures` and `malformed_packets` pinned to observed
 //!    values.
 //!
@@ -23,19 +23,19 @@
 //!   PIDs: 0x0000 (PAT), 0x0064/0x0082–0x0084/0x008C (PMTs, from PAT-follow),
 //!         0x00AA (AIT), 0x00AB (DSM-CC carousel).
 //!   No SDT/NIT/EIT/TDT-TOT in this short clip.
-//!   Table set with explicit PID watch: {Ait, DsmccSection, Pat, Pmt}.
+//!   Table set with explicit PID watch: {AitSection, DsmccSection, PatSection, PmtSection}.
 //!   Stats: emitted=6, sections_completed=50, crc_failures=0, malformed=0.
 //!
 //! `tnt-5w-12732v-isi6-10s.ts` (13 515 packets / 2 540 820 bytes):
 //!   Standard SI PIDs present: 0x0010 (NIT), 0x0011 (SDT), 0x0012 (EIT).
-//!   Table set (default demux): {Eit, Nit, Pat, Pmt, Sdt}.
+//!   Table set (default demux): {EitSection, NitSection, PatSection, PmtSection, SdtSection}.
 //!   Stats: emitted=237, sections_completed=484, crc_failures=0, malformed=0.
 
 use std::collections::BTreeSet;
 
 use dvb_si::demux::SiDemux;
 use dvb_si::pid::Pid;
-use dvb_si::tables::AnyTable;
+use dvb_si::tables::AnyTableSection;
 use dvb_si::ts::TS_PACKET_SIZE;
 
 // ─────────────────────────────────────── helpers ────────────────────────────
@@ -62,7 +62,7 @@ fn feed_all(
             continue;
         }
         for ev in demux.feed(chunk) {
-            let name = variant_name(ev.table().as_ref());
+            let name = variant_name(ev.table_section().as_ref());
             names.insert(name);
             events.push(ev);
         }
@@ -70,43 +70,43 @@ fn feed_all(
     (names, events)
 }
 
-/// Return the variant name string from a `Result<&AnyTable>`.
-fn variant_name(result: Result<&AnyTable<'_>, &dvb_si::error::Error>) -> String {
+/// Return the variant name string from a `Result<&AnyTableSection>`.
+fn variant_name(result: Result<&AnyTableSection<'_>, &dvb_si::error::Error>) -> String {
     match result {
         Err(_) => "ParseError".to_string(),
         Ok(t) => match t {
-            AnyTable::Pat(_) => "Pat",
-            AnyTable::Cat(_) => "Cat",
-            AnyTable::Pmt(_) => "Pmt",
-            AnyTable::Tsdt(_) => "Tsdt",
-            AnyTable::DsmccSection(_) => "DsmccSection",
-            AnyTable::Nit(_) => "Nit",
-            AnyTable::Sdt(_) => "Sdt",
-            AnyTable::Bat(_) => "Bat",
-            AnyTable::Unt(_) => "Unt",
-            AnyTable::Int(_) => "Int",
-            AnyTable::Sat(_) => "Sat",
-            AnyTable::Eit(_) => "Eit",
-            AnyTable::Tdt(_) => "Tdt",
-            AnyTable::Rst(_) => "Rst",
-            AnyTable::St(_) => "St",
-            AnyTable::Tot(_) => "Tot",
-            AnyTable::Ait(_) => "Ait",
-            AnyTable::Container(_) => "Container",
-            AnyTable::Rct(_) => "Rct",
-            AnyTable::Cit(_) => "Cit",
-            AnyTable::MpeFec(_) => "MpeFec",
-            AnyTable::Rnt(_) => "Rnt",
-            AnyTable::MpeIfec(_) => "MpeIfec",
-            AnyTable::ProtectionMessage(_) => "ProtectionMessage",
-            AnyTable::DownloadableFontInfo(_) => "DownloadableFontInfo",
-            AnyTable::Dit(_) => "Dit",
-            AnyTable::Sit(_) => "Sit",
-            AnyTable::MpeDatagram(_) => "MpeDatagram",
-            AnyTable::Unknown { table_id, .. } => {
+            AnyTableSection::PatSection(_) => "PatSection",
+            AnyTableSection::CatSection(_) => "CatSection",
+            AnyTableSection::PmtSection(_) => "PmtSection",
+            AnyTableSection::TsdtSection(_) => "TsdtSection",
+            AnyTableSection::DsmccSection(_) => "DsmccSection",
+            AnyTableSection::NitSection(_) => "NitSection",
+            AnyTableSection::SdtSection(_) => "SdtSection",
+            AnyTableSection::BatSection(_) => "BatSection",
+            AnyTableSection::UntSection(_) => "UntSection",
+            AnyTableSection::IntSection(_) => "IntSection",
+            AnyTableSection::SatSection(_) => "SatSection",
+            AnyTableSection::EitSection(_) => "EitSection",
+            AnyTableSection::TdtSection(_) => "TdtSection",
+            AnyTableSection::RstSection(_) => "RstSection",
+            AnyTableSection::StSection(_) => "StSection",
+            AnyTableSection::TotSection(_) => "TotSection",
+            AnyTableSection::AitSection(_) => "AitSection",
+            AnyTableSection::ContainerSection(_) => "ContainerSection",
+            AnyTableSection::RctSection(_) => "RctSection",
+            AnyTableSection::CitSection(_) => "CitSection",
+            AnyTableSection::MpeFecSection(_) => "MpeFecSection",
+            AnyTableSection::RntSection(_) => "RntSection",
+            AnyTableSection::MpeIfecSection(_) => "MpeIfecSection",
+            AnyTableSection::ProtectionMessage(_) => "ProtectionMessage",
+            AnyTableSection::DownloadableFontInfo(_) => "DownloadableFontInfo",
+            AnyTableSection::DitSection(_) => "DitSection",
+            AnyTableSection::SitSection(_) => "SitSection",
+            AnyTableSection::MpeDatagram(_) => "MpeDatagram",
+            AnyTableSection::Unknown { table_id, .. } => {
                 return format!("Unknown(0x{table_id:02X})");
             }
-            // a new AnyTable variant reached the capture — pin it in the expected set
+            // a new AnyTableSection variant reached the capture — pin it in the expected set
             _ => "UNPINNED_NEW_VARIANT",
         }
         .to_string(),
@@ -151,9 +151,9 @@ fn m6_table_set() {
     );
 
     // Pinned table set — discovered by first `-- --nocapture` run.
-    // The m6 clip has no standard SI PIDs; Ait and DsmccSection come from the
+    // The m6 clip has no standard SI PIDs; AitSection and DsmccSection come from the
     // explicit PID additions above.
-    let expected: BTreeSet<String> = ["Ait", "DsmccSection", "Pat", "Pmt"]
+    let expected: BTreeSet<String> = ["AitSection", "DsmccSection", "PatSection", "PmtSection"]
         .iter()
         .map(|s| s.to_string())
         .collect();
@@ -294,10 +294,16 @@ fn tnt_table_set() {
     // Note: 0x0014 (TDT/TOT) is absent from this capture. 0x0013 (RST,
     // table_id 0x71) is watched by default but carries no sections here;
     // 0x0015 is NETWORK_SYNC and not SI.
-    let expected: BTreeSet<String> = ["Eit", "Nit", "Pat", "Pmt", "Sdt"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let expected: BTreeSet<String> = [
+        "EitSection",
+        "NitSection",
+        "PatSection",
+        "PmtSection",
+        "SdtSection",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
     assert_eq!(
         names, expected,
         "tnt-5w: table set changed — update the pin"
@@ -389,8 +395,8 @@ fn tnt_version_gate_suppresses_second_pass() {
 #[test]
 fn tnt_decoded_json_acceptance() {
     use dvb_common::Parse;
-    use dvb_si::tables::eit::Eit;
-    use dvb_si::tables::sdt::Sdt;
+    use dvb_si::tables::eit::EitSection;
+    use dvb_si::tables::sdt::SdtSection;
 
     let data = read_fixture("tnt-5w-12732v-isi6-10s.ts");
     let mut demux = SiDemux::builder().build();
@@ -407,7 +413,7 @@ fn tnt_decoded_json_acceptance() {
             .find(|ev| matches!(ev.table_id(), 0x42 | 0x46))
             .expect("no SDT event found in tnt-5w");
 
-        let sdt = Sdt::parse(sdt_event.bytes()).expect("SDT parse");
+        let sdt = SdtSection::parse(sdt_event.bytes()).expect("SDT parse");
         let table_json = serde_json::to_value(&sdt).expect("serialize SDT table");
 
         // Find the first service descriptor's decoded service_name in the
@@ -451,7 +457,7 @@ fn tnt_decoded_json_acceptance() {
             .iter()
             .filter(|ev| matches!(ev.table_id(), 0x4E..=0x6F))
         {
-            let eit = match Eit::parse(eit_event.bytes()) {
+            let eit = match EitSection::parse(eit_event.bytes()) {
                 Ok(e) => e,
                 Err(_) => continue,
             };

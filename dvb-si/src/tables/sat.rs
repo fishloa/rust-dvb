@@ -8,7 +8,7 @@
 //!
 //! The body is bit-packed orbital / beamhopping data (33-bit NCR split fields,
 //! two's-complement lat/long, conditional ephemeris loops). It is exposed here
-//! as a raw byte slice ([`Sat::body`]); the full per-variant field layout is
+//! as a raw byte slice ([`SatSection::body`]); the full per-variant field layout is
 //! documented in `docs/en_300_468.md` (Tables 11a–11i). This mirrors the crate
 //! convention of keeping complex variable-length loops raw (cf. the descriptor
 //! loops in `bat.rs`).
@@ -49,12 +49,12 @@ pub enum SatTableId {
 
 /// Satellite Access Table section (EN 300 468 §5.2.11.1, Table 11a).
 ///
-/// The typed fields cover the common section header; [`Sat::body`] is the raw
-/// body whose structure depends on [`Sat::satellite_table_id`].
+/// The typed fields cover the common section header; [`SatSection::body`] is the raw
+/// body whose structure depends on [`SatSection::satellite_table_id`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
-pub struct Sat<'a> {
+pub struct SatSection<'a> {
     /// 6-bit discriminant selecting the body structure (see [`SatTableId`]).
     pub satellite_table_id: u8,
     /// 10-bit sub_table discriminator (e.g. the 10 MSBs of `satellite_id`).
@@ -67,19 +67,19 @@ pub struct Sat<'a> {
     pub section_number: u8,
     /// Highest section number of the sub_table.
     pub last_section_number: u8,
-    /// Raw body bytes — interpret per [`Sat::satellite_table_id`]; layout in `docs/tables/sat.md`.
+    /// Raw body bytes — interpret per [`SatSection::satellite_table_id`]; layout in `docs/tables/sat.md`.
     pub body: &'a [u8],
 }
 
-impl Sat<'_> {
-    /// Typed view of [`Sat::satellite_table_id`], or `None` if reserved (5–63).
+impl SatSection<'_> {
+    /// Typed view of [`SatSection::satellite_table_id`], or `None` if reserved (5–63).
     #[must_use]
     pub fn kind(&self) -> Option<SatTableId> {
         SatTableId::try_from(self.satellite_table_id).ok()
     }
 }
 
-impl<'a> Parse<'a> for Sat<'a> {
+impl<'a> Parse<'a> for SatSection<'a> {
     type Error = crate::error::Error;
     fn parse(bytes: &'a [u8]) -> Result<Self> {
         let min_len = HEADER_LEN + CRC_LEN;
@@ -87,13 +87,13 @@ impl<'a> Parse<'a> for Sat<'a> {
             return Err(Error::BufferTooShort {
                 need: min_len,
                 have: bytes.len(),
-                what: "Sat",
+                what: "SatSection",
             });
         }
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "Sat",
+                what: "SatSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -113,7 +113,7 @@ impl<'a> Parse<'a> for Sat<'a> {
         let last_section_number = bytes[7];
         // bytes[8] = reserved_zero_future_use
         let body = &bytes[HEADER_LEN..total - CRC_LEN];
-        Ok(Sat {
+        Ok(SatSection {
             satellite_table_id,
             table_count,
             version_number,
@@ -125,7 +125,7 @@ impl<'a> Parse<'a> for Sat<'a> {
     }
 }
 
-impl Serialize for Sat<'_> {
+impl Serialize for SatSection<'_> {
     type Error = crate::error::Error;
     fn serialized_len(&self) -> usize {
         HEADER_LEN + self.body.len() + CRC_LEN
@@ -158,12 +158,12 @@ impl Serialize for Sat<'_> {
     }
 }
 
-impl<'a> Table<'a> for Sat<'a> {
+impl<'a> Table<'a> for SatSection<'a> {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Sat<'a> {
+impl<'a> crate::traits::TableDef<'a> for SatSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "SATELLITE_ACCESS";
 }
@@ -195,7 +195,7 @@ mod tests {
     fn parse_position_v3_discriminant() {
         let body = [0xAA, 0xBB, 0xCC, 0xDD];
         let bytes = build_sat(4, 0x1A3, &body);
-        let sat = Sat::parse(&bytes).unwrap();
+        let sat = SatSection::parse(&bytes).unwrap();
         assert_eq!(sat.satellite_table_id, 4);
         assert_eq!(sat.kind(), Some(SatTableId::PositionV3));
         assert_eq!(sat.table_count, 0x1A3);
@@ -207,7 +207,7 @@ mod tests {
     #[test]
     fn reserved_discriminant_has_no_kind() {
         let bytes = build_sat(7, 0, &[]);
-        let sat = Sat::parse(&bytes).unwrap();
+        let sat = SatSection::parse(&bytes).unwrap();
         assert_eq!(sat.satellite_table_id, 7);
         assert_eq!(sat.kind(), None);
     }
@@ -217,7 +217,7 @@ mod tests {
         let mut bytes = build_sat(0, 0, &[1, 2, 3]);
         bytes[0] = 0x40;
         assert!(matches!(
-            Sat::parse(&bytes).unwrap_err(),
+            SatSection::parse(&bytes).unwrap_err(),
             Error::UnexpectedTableId { table_id: 0x40, .. }
         ));
     }
@@ -225,8 +225,11 @@ mod tests {
     #[test]
     fn rejects_short_buffer() {
         assert!(matches!(
-            Sat::parse(&[0x4D, 0xF0]).unwrap_err(),
-            Error::BufferTooShort { what: "Sat", .. }
+            SatSection::parse(&[0x4D, 0xF0]).unwrap_err(),
+            Error::BufferTooShort {
+                what: "SatSection",
+                ..
+            }
         ));
     }
 
@@ -234,10 +237,10 @@ mod tests {
     fn serialize_round_trip() {
         let body = [0x01, 0x02, 0x03, 0x04, 0x05];
         let bytes = build_sat(1, 0x2FF, &body);
-        let sat = Sat::parse(&bytes).unwrap();
+        let sat = SatSection::parse(&bytes).unwrap();
         let mut buf = vec![0u8; sat.serialized_len()];
         sat.serialize_into(&mut buf).unwrap();
-        let re = Sat::parse(&buf).unwrap();
+        let re = SatSection::parse(&buf).unwrap();
         assert_eq!(sat, re);
         assert_eq!(re.kind(), Some(SatTableId::CellFragment));
         assert_eq!(re.table_count, 0x2FF);

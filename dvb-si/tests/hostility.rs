@@ -15,7 +15,7 @@
 use dvb_common::Serialize;
 use dvb_si::demux::SiDemux;
 use dvb_si::descriptors::parse_loop;
-use dvb_si::tables::sdt::{Sdt, SdtKind};
+use dvb_si::tables::sdt::{SdtKind, SdtSection};
 
 // ── Deterministic LCG (no deps) ───────────────────────────────────────────────
 
@@ -42,7 +42,7 @@ impl Lcg {
 fn build_sdt_bytes() -> Vec<u8> {
     use dvb_si::tables::sdt::SdtService;
 
-    let sdt = Sdt {
+    let sdt = SdtSection {
         kind: SdtKind::Actual,
         transport_stream_id: 0x1234,
         version_number: 3,
@@ -96,19 +96,19 @@ fn hostility_garbage_ts_packets_no_panic() {
 
 // ── (b) Every truncation of a valid SDT section → no panic ───────────────────
 
-/// For every prefix length 0..=full.len(), both `AnyTable::parse` and
+/// For every prefix length 0..=full.len(), both `AnyTableSection::parse` and
 /// `parse_loop` over the prefix must return (not panic).
 #[test]
 fn hostility_sdt_all_truncations_no_panic() {
-    use dvb_si::tables::AnyTable;
+    use dvb_si::tables::AnyTableSection;
 
     let full = build_sdt_bytes();
 
     for len in 0..=full.len() {
         let prefix = &full[..len];
 
-        // AnyTable::parse must return Ok or Err — never panic.
-        let _ = AnyTable::parse(prefix);
+        // AnyTableSection::parse must return Ok or Err — never panic.
+        let _ = AnyTableSection::parse(prefix);
 
         // parse_loop over the same bytes: drain fully — never panic.
         let _ = parse_loop(prefix).count();

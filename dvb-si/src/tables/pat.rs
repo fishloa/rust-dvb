@@ -33,7 +33,7 @@ pub struct PatEntry {
 /// Program Association Table.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct Pat {
+pub struct PatSection {
     /// transport_stream_id from the section header.
     pub transport_stream_id: u16,
     /// 5-bit version_number from the section header.
@@ -48,21 +48,21 @@ pub struct Pat {
     pub entries: Vec<PatEntry>,
 }
 
-impl<'a> Parse<'a> for Pat {
+impl<'a> Parse<'a> for PatSection {
     type Error = crate::error::Error;
     fn parse(bytes: &'a [u8]) -> Result<Self> {
         if bytes.len() < MIN_HEADER_LEN + EXTENSION_HEADER_LEN + CRC_LEN {
             return Err(Error::BufferTooShort {
                 need: MIN_HEADER_LEN + EXTENSION_HEADER_LEN + CRC_LEN,
                 have: bytes.len(),
-                what: "Pat",
+                what: "PatSection",
             });
         }
 
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "Pat",
+                what: "PatSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -99,7 +99,7 @@ impl<'a> Parse<'a> for Pat {
             pos += ENTRY_LEN;
         }
 
-        Ok(Pat {
+        Ok(PatSection {
             transport_stream_id,
             version_number,
             current_next_indicator,
@@ -110,7 +110,7 @@ impl<'a> Parse<'a> for Pat {
     }
 }
 
-impl Serialize for Pat {
+impl Serialize for PatSection {
     type Error = crate::error::Error;
     fn serialized_len(&self) -> usize {
         MIN_HEADER_LEN + EXTENSION_HEADER_LEN + self.entries.len() * ENTRY_LEN + CRC_LEN
@@ -152,17 +152,17 @@ impl Serialize for Pat {
     }
 }
 
-impl<'a> Table<'a> for Pat {
+impl<'a> Table<'a> for PatSection {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Pat {
+impl<'a> crate::traits::TableDef<'a> for PatSection {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "PROGRAM_ASSOCIATION";
 }
 
-impl Pat {
+impl PatSection {
     /// Program entries excluding the NIT entry.
     pub fn programmes(&self) -> impl Iterator<Item = &PatEntry> {
         self.entries
@@ -207,7 +207,7 @@ mod tests {
     #[test]
     fn parse_empty_pat_zero_programs() {
         let bytes = build_pat(0x1234, 5, &[]);
-        let pat = Pat::parse(&bytes).expect("parse");
+        let pat = PatSection::parse(&bytes).expect("parse");
         assert_eq!(pat.transport_stream_id, 0x1234);
         assert_eq!(pat.version_number, 5);
         assert!(pat.current_next_indicator);
@@ -219,7 +219,7 @@ mod tests {
     #[test]
     fn parse_single_program_extracts_pmt_pid() {
         let bytes = build_pat(1, 0, &[(42, 0x1234)]);
-        let pat = Pat::parse(&bytes).unwrap();
+        let pat = PatSection::parse(&bytes).unwrap();
         assert_eq!(pat.entries.len(), 1);
         assert_eq!(pat.entries[0].program_number, 42);
         assert_eq!(pat.entries[0].pid, 0x1234);
@@ -229,7 +229,7 @@ mod tests {
     fn parse_many_programs_preserves_order() {
         let entries: Vec<(u16, u16)> = (1..=10).map(|i| (i, 0x1000 + i)).collect();
         let bytes = build_pat(1, 0, &entries);
-        let pat = Pat::parse(&bytes).unwrap();
+        let pat = PatSection::parse(&bytes).unwrap();
         assert_eq!(pat.entries.len(), 10);
         for (i, e) in pat.entries.iter().enumerate() {
             assert_eq!(e.program_number, (i + 1) as u16);
@@ -241,7 +241,7 @@ mod tests {
     fn parse_rejects_wrong_table_id() {
         let mut bytes = build_pat(1, 0, &[]);
         bytes[0] = 0x02; // PMT table_id
-        let err = Pat::parse(&bytes).unwrap_err();
+        let err = PatSection::parse(&bytes).unwrap_err();
         assert!(matches!(
             err,
             Error::UnexpectedTableId { table_id: 0x02, .. }
@@ -250,13 +250,13 @@ mod tests {
 
     #[test]
     fn parse_rejects_short_buffer() {
-        let err = Pat::parse(&[0x00, 0x00]).unwrap_err();
+        let err = PatSection::parse(&[0x00, 0x00]).unwrap_err();
         assert!(matches!(err, Error::BufferTooShort { .. }));
     }
 
     #[test]
     fn serialize_round_trip_empty() {
-        let pat = Pat {
+        let pat = PatSection {
             transport_stream_id: 0x0001,
             version_number: 0,
             current_next_indicator: true,
@@ -266,7 +266,7 @@ mod tests {
         };
         let mut buf = vec![0u8; pat.serialized_len()];
         pat.serialize_into(&mut buf).expect("serialize");
-        let reparsed = Pat::parse(&buf).expect("reparse");
+        let reparsed = PatSection::parse(&buf).expect("reparse");
         assert_eq!(pat, reparsed);
     }
 
@@ -278,7 +278,7 @@ mod tests {
                 pid: 0x1000 + i,
             })
             .collect();
-        let pat = Pat {
+        let pat = PatSection {
             transport_stream_id: 0xABCD,
             version_number: 3,
             current_next_indicator: true,
@@ -288,14 +288,14 @@ mod tests {
         };
         let mut buf = vec![0u8; pat.serialized_len()];
         pat.serialize_into(&mut buf).unwrap();
-        let reparsed = Pat::parse(&buf).unwrap();
+        let reparsed = PatSection::parse(&buf).unwrap();
         assert_eq!(pat, reparsed);
     }
 
     #[test]
     fn network_pid_entry_identified_by_program_number_0() {
         let bytes = build_pat(1, 0, &[(0, 0x0010), (1, 0x0100)]);
-        let pat = Pat::parse(&bytes).unwrap();
+        let pat = PatSection::parse(&bytes).unwrap();
         assert_eq!(pat.nit_pid(), Some(0x0010));
         assert_eq!(pat.programmes().count(), 1);
         assert_eq!(pat.programmes().next().unwrap().program_number, 1);

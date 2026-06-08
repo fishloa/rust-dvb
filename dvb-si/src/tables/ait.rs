@@ -49,7 +49,7 @@ pub struct AitApplication<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
-pub struct Ait<'a> {
+pub struct AitSection<'a> {
     /// 15-bit application_type (e.g. 0x0010 for HbbTV).
     pub application_type: u16,
     /// Test application flag (bit 15 of the extension field).
@@ -70,7 +70,7 @@ pub struct Ait<'a> {
     pub applications: Vec<AitApplication<'a>>,
 }
 
-impl<'a> Parse<'a> for Ait<'a> {
+impl<'a> Parse<'a> for AitSection<'a> {
     type Error = crate::error::Error;
     fn parse(bytes: &'a [u8]) -> Result<Self> {
         let min_len = MIN_HEADER_LEN
@@ -82,14 +82,14 @@ impl<'a> Parse<'a> for Ait<'a> {
             return Err(Error::BufferTooShort {
                 need: min_len,
                 have: bytes.len(),
-                what: "Ait",
+                what: "AitSection",
             });
         }
 
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "Ait",
+                what: "AitSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -163,7 +163,7 @@ impl<'a> Parse<'a> for Ait<'a> {
             pos = app_desc_end;
         }
 
-        Ok(Ait {
+        Ok(AitSection {
             application_type,
             test_application_flag,
             version_number,
@@ -176,7 +176,7 @@ impl<'a> Parse<'a> for Ait<'a> {
     }
 }
 
-impl Serialize for Ait<'_> {
+impl Serialize for AitSection<'_> {
     type Error = crate::error::Error;
     fn serialized_len(&self) -> usize {
         let app_bytes: usize = self
@@ -252,12 +252,12 @@ impl Serialize for Ait<'_> {
     }
 }
 
-impl<'a> Table<'a> for Ait<'a> {
+impl<'a> Table<'a> for AitSection<'a> {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Ait<'a> {
+impl<'a> crate::traits::TableDef<'a> for AitSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "APPLICATION_INFORMATION";
 }
@@ -317,7 +317,7 @@ mod tests {
     fn parse_rejects_wrong_table_id() {
         let mut bytes = build_ait(0x0010, false, 0, &[], &[]);
         bytes[0] = 0x00;
-        let err = Ait::parse(&bytes).unwrap_err();
+        let err = AitSection::parse(&bytes).unwrap_err();
         assert!(matches!(
             err,
             Error::UnexpectedTableId { table_id: 0x00, .. }
@@ -326,14 +326,14 @@ mod tests {
 
     #[test]
     fn parse_rejects_short_buffer() {
-        let err = Ait::parse(&[0x74, 0x00]).unwrap_err();
+        let err = AitSection::parse(&[0x74, 0x00]).unwrap_err();
         assert!(matches!(err, Error::BufferTooShort { .. }));
     }
 
     #[test]
     fn parse_empty_ait_no_applications() {
         let bytes = build_ait(0x0010, false, 5, &[], &[]);
-        let ait = Ait::parse(&bytes).expect("parse");
+        let ait = AitSection::parse(&bytes).expect("parse");
         assert_eq!(ait.application_type, 0x0010);
         assert!(!ait.test_application_flag);
         assert_eq!(ait.version_number, 5);
@@ -347,7 +347,7 @@ mod tests {
     #[test]
     fn parse_test_application_flag_extracted() {
         let bytes = build_ait(0x0010, true, 0, &[], &[]);
-        let ait = Ait::parse(&bytes).unwrap();
+        let ait = AitSection::parse(&bytes).unwrap();
         assert!(ait.test_application_flag);
     }
 
@@ -355,7 +355,7 @@ mod tests {
     fn parse_common_descriptors_preserved() {
         let desc = vec![0x00, 0x02, 0xAA, 0xBB];
         let bytes = build_ait(0x0010, false, 0, &desc, &[]);
-        let ait = Ait::parse(&bytes).unwrap();
+        let ait = AitSection::parse(&bytes).unwrap();
         assert_eq!(ait.common_descriptors.raw(), &desc[..]);
     }
 
@@ -369,7 +369,7 @@ mod tests {
             &[],
             &[(0x12345678, 0xABCD, 0x01, desc.clone())],
         );
-        let ait = Ait::parse(&bytes).unwrap();
+        let ait = AitSection::parse(&bytes).unwrap();
         assert_eq!(ait.applications.len(), 1);
         assert_eq!(ait.applications[0].identifier.organisation_id, 0x12345678);
         assert_eq!(ait.applications[0].identifier.application_id, 0xABCD);
@@ -390,7 +390,7 @@ mod tests {
                 (0x00000003, 0x0003, 0x03, vec![0x02, 0x03]),
             ],
         );
-        let ait = Ait::parse(&bytes).unwrap();
+        let ait = AitSection::parse(&bytes).unwrap();
         assert_eq!(ait.applications.len(), 3);
         assert_eq!(ait.applications[0].identifier.organisation_id, 1);
         assert_eq!(ait.applications[1].identifier.organisation_id, 2);
@@ -399,7 +399,7 @@ mod tests {
 
     #[test]
     fn serialize_round_trip_empty() {
-        let ait = Ait {
+        let ait = AitSection {
             application_type: 0x0010,
             test_application_flag: false,
             version_number: 3,
@@ -411,14 +411,14 @@ mod tests {
         };
         let mut buf = vec![0u8; ait.serialized_len()];
         ait.serialize_into(&mut buf).unwrap();
-        let reparsed = Ait::parse(&buf).unwrap();
+        let reparsed = AitSection::parse(&buf).unwrap();
         assert_eq!(ait, reparsed);
     }
 
     #[test]
     fn serialize_round_trip_with_applications() {
         let desc1: [u8; 2] = [0xAA, 0xBB];
-        let ait = Ait {
+        let ait = AitSection {
             application_type: 0x0010,
             test_application_flag: true,
             version_number: 7,
@@ -447,7 +447,7 @@ mod tests {
         };
         let mut buf = vec![0u8; ait.serialized_len()];
         ait.serialize_into(&mut buf).unwrap();
-        let reparsed = Ait::parse(&buf).unwrap();
+        let reparsed = AitSection::parse(&buf).unwrap();
         assert_eq!(ait, reparsed);
     }
 }

@@ -41,7 +41,7 @@ pub struct PmtStream<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
-pub struct Pmt<'a> {
+pub struct PmtSection<'a> {
     /// Programme number from the table_id_extension field.
     pub program_number: u16,
     /// 5-bit version_number.
@@ -58,7 +58,7 @@ pub struct Pmt<'a> {
     pub streams: Vec<PmtStream<'a>>,
 }
 
-impl<'a> Parse<'a> for Pmt<'a> {
+impl<'a> Parse<'a> for PmtSection<'a> {
     type Error = crate::error::Error;
     fn parse(bytes: &'a [u8]) -> Result<Self> {
         let min_len =
@@ -67,13 +67,13 @@ impl<'a> Parse<'a> for Pmt<'a> {
             return Err(Error::BufferTooShort {
                 need: min_len,
                 have: bytes.len(),
-                what: "Pmt",
+                what: "PmtSection",
             });
         }
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "Pmt",
+                what: "PmtSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -129,7 +129,7 @@ impl<'a> Parse<'a> for Pmt<'a> {
             pos = es_end;
         }
 
-        Ok(Pmt {
+        Ok(PmtSection {
             program_number,
             version_number,
             current_next_indicator,
@@ -140,7 +140,7 @@ impl<'a> Parse<'a> for Pmt<'a> {
     }
 }
 
-impl Serialize for Pmt<'_> {
+impl Serialize for PmtSection<'_> {
     type Error = crate::error::Error;
     fn serialized_len(&self) -> usize {
         let streams_bytes: usize = self
@@ -205,12 +205,12 @@ impl Serialize for Pmt<'_> {
     }
 }
 
-impl<'a> Table<'a> for Pmt<'a> {
+impl<'a> Table<'a> for PmtSection<'a> {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Pmt<'a> {
+impl<'a> crate::traits::TableDef<'a> for PmtSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "PROGRAM_MAP";
 }
@@ -265,7 +265,7 @@ mod tests {
     #[test]
     fn parse_extracts_pcr_pid_and_program_info() {
         let bytes = build_pmt(42, 5, 0x0100, &[0xAA, 0xBB], &[]);
-        let pmt = Pmt::parse(&bytes).unwrap();
+        let pmt = PmtSection::parse(&bytes).unwrap();
         assert_eq!(pmt.program_number, 42);
         assert_eq!(pmt.version_number, 5);
         assert!(pmt.current_next_indicator);
@@ -283,7 +283,7 @@ mod tests {
             &[],
             &[(0x02, 0x102, vec![0x11, 0x22]), (0x1B, 0x103, vec![0x33])],
         );
-        let pmt = Pmt::parse(&bytes).unwrap();
+        let pmt = PmtSection::parse(&bytes).unwrap();
         assert_eq!(pmt.streams.len(), 2);
         assert_eq!(pmt.streams[0].stream_type, 0x02);
         assert_eq!(pmt.streams[0].elementary_pid, 0x102);
@@ -297,7 +297,7 @@ mod tests {
     fn parse_rejects_wrong_table_id() {
         let mut bytes = build_pmt(1, 0, 0x100, &[], &[]);
         bytes[0] = 0x00;
-        let err = Pmt::parse(&bytes).unwrap_err();
+        let err = PmtSection::parse(&bytes).unwrap_err();
         assert!(matches!(
             err,
             Error::UnexpectedTableId { table_id: 0x00, .. }
@@ -306,13 +306,13 @@ mod tests {
 
     #[test]
     fn parse_rejects_short_buffer() {
-        let err = Pmt::parse(&[0x02, 0x00]).unwrap_err();
+        let err = PmtSection::parse(&[0x02, 0x00]).unwrap_err();
         assert!(matches!(err, Error::BufferTooShort { .. }));
     }
 
     #[test]
     fn serialize_round_trip_empty_program() {
-        let pmt = Pmt {
+        let pmt = PmtSection {
             program_number: 1,
             version_number: 0,
             current_next_indicator: true,
@@ -322,7 +322,7 @@ mod tests {
         };
         let mut buf = vec![0u8; pmt.serialized_len()];
         pmt.serialize_into(&mut buf).unwrap();
-        let re = Pmt::parse(&buf).unwrap();
+        let re = PmtSection::parse(&buf).unwrap();
         assert_eq!(pmt, re);
     }
 
@@ -331,7 +331,7 @@ mod tests {
         let prog_info: [u8; 3] = [0x09, 0x01, 0xFF];
         let es1: [u8; 4] = [0x52, 0x02, 0xAA, 0xBB];
         let es2: [u8; 2] = [0x0A, 0x00];
-        let pmt = Pmt {
+        let pmt = PmtSection {
             program_number: 0xABCD,
             version_number: 7,
             current_next_indicator: true,
@@ -357,14 +357,14 @@ mod tests {
         };
         let mut buf = vec![0u8; pmt.serialized_len()];
         pmt.serialize_into(&mut buf).unwrap();
-        let re = Pmt::parse(&buf).unwrap();
+        let re = PmtSection::parse(&buf).unwrap();
         assert_eq!(pmt, re);
     }
 
     #[test]
     fn zero_elementary_streams_is_valid() {
         let bytes = build_pmt(99, 0, 0x0100, &[], &[]);
-        let pmt = Pmt::parse(&bytes).unwrap();
+        let pmt = PmtSection::parse(&bytes).unwrap();
         assert_eq!(pmt.streams.len(), 0);
     }
 
@@ -372,7 +372,7 @@ mod tests {
     fn parse_preserves_raw_program_info_bytes() {
         let pi = vec![0x09, 0x04, 0x01, 0x02, 0x03, 0x04];
         let bytes = build_pmt(1, 0, 0x100, &pi, &[]);
-        let pmt = Pmt::parse(&bytes).unwrap();
+        let pmt = PmtSection::parse(&bytes).unwrap();
         assert_eq!(pmt.program_info.raw(), &pi[..]);
     }
 }

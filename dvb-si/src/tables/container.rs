@@ -1,4 +1,4 @@
-//! Container Table — ETSI TS 102 323 v1.4.1 §7.3.1.4 (table_id 0x75).
+//! Container table section — ETSI TS 102 323 v1.4.1 §7.3.1.4 (table_id 0x75).
 //!
 //! The container section carries TV-Anytime container data (an MHP object
 //! carousel file fragment, after optional compression). Syntax per "Table 20 —
@@ -34,10 +34,10 @@ use crate::error::{Error, Result};
 use crate::traits::Table;
 use dvb_common::{Parse, Serialize};
 
-/// table_id for the Container Table.
+/// table_id for the Container table.
 pub const TABLE_ID: u8 = 0x75;
 
-/// The Container Table has no well-known PID — its carriage is signalled via
+/// The Container table has no well-known PID — its carriage is signalled via
 /// descriptors. `0x0000` is a placeholder following the DSM-CC precedent.
 pub const PID: u16 = 0x0000;
 
@@ -54,14 +54,14 @@ const CRC_LEN: usize = 4;
 /// Minimum total encoded length: header + extension + CRC.
 const MIN_LEN: usize = HEADER_LEN + EXTENSION_HEADER_LEN + CRC_LEN;
 
-/// Container Table (ETSI TS 102 323 v1.4.1 §7.3.1.4).
+/// Container table section parser (ETSI TS 102 323 v1.4.1 §7.3.1.4).
 ///
 /// `container_data` borrows the payload region (everything between the extension
 /// header and the CRC-32 trailer) without parsing its internal structure.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
-pub struct Container<'a> {
+pub struct ContainerSection<'a> {
     /// `private_indicator` bit from byte 1 (this is a private section).
     pub private_indicator: bool,
     /// 16-bit `container_id` (carried in the table_id_extension slot, bytes 3-4).
@@ -79,7 +79,7 @@ pub struct Container<'a> {
     pub container_data: &'a [u8],
 }
 
-impl<'a> Parse<'a> for Container<'a> {
+impl<'a> Parse<'a> for ContainerSection<'a> {
     type Error = crate::error::Error;
 
     fn parse(bytes: &'a [u8]) -> Result<Self> {
@@ -87,14 +87,14 @@ impl<'a> Parse<'a> for Container<'a> {
             return Err(Error::BufferTooShort {
                 need: MIN_LEN,
                 have: bytes.len(),
-                what: "Container",
+                what: "ContainerSection",
             });
         }
 
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "Container",
+                what: "ContainerSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -126,7 +126,7 @@ impl<'a> Parse<'a> for Container<'a> {
         let data_end = total - CRC_LEN;
         let container_data = &bytes[data_start..data_end];
 
-        Ok(Container {
+        Ok(ContainerSection {
             private_indicator,
             container_id,
             version_number,
@@ -138,7 +138,7 @@ impl<'a> Parse<'a> for Container<'a> {
     }
 }
 
-impl Serialize for Container<'_> {
+impl Serialize for ContainerSection<'_> {
     type Error = crate::error::Error;
 
     fn serialized_len(&self) -> usize {
@@ -188,12 +188,12 @@ impl Serialize for Container<'_> {
     }
 }
 
-impl<'a> Table<'a> for Container<'a> {
+impl<'a> Table<'a> for ContainerSection<'a> {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Container<'a> {
+impl<'a> crate::traits::TableDef<'a> for ContainerSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "CONTAINER";
 }
@@ -212,7 +212,7 @@ mod tests {
         last_section_number: u8,
         container_data: &[u8],
     ) -> Vec<u8> {
-        let c = Container {
+        let c = ContainerSection {
             private_indicator: true,
             container_id,
             version_number: version,
@@ -230,7 +230,7 @@ mod tests {
     fn parse_happy_path() {
         let data = [0x00u8, 0xDE, 0xAD, 0xBE, 0xEF];
         let bytes = build_container(0x1234, 7, true, 1, 3, &data);
-        let c = Container::parse(&bytes).unwrap();
+        let c = ContainerSection::parse(&bytes).unwrap();
         assert!(c.private_indicator);
         assert_eq!(c.container_id, 0x1234);
         assert_eq!(c.version_number, 7);
@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn parse_empty_container_data() {
         let bytes = build_container(0x0000, 0, false, 0, 0, &[]);
-        let c = Container::parse(&bytes).unwrap();
+        let c = ContainerSection::parse(&bytes).unwrap();
         assert_eq!(c.container_id, 0x0000);
         assert_eq!(c.version_number, 0);
         assert!(!c.current_next_indicator);
@@ -255,7 +255,7 @@ mod tests {
         let mut bytes = build_container(0x0001, 0, true, 0, 0, &[]);
         bytes[0] = 0x70; // not 0x75
         assert!(matches!(
-            Container::parse(&bytes).unwrap_err(),
+            ContainerSection::parse(&bytes).unwrap_err(),
             Error::UnexpectedTableId { table_id: 0x70, .. }
         ));
     }
@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn parse_rejects_short_buffer() {
         assert!(matches!(
-            Container::parse(&[0x75, 0x80]).unwrap_err(),
+            ContainerSection::parse(&[0x75, 0x80]).unwrap_err(),
             Error::BufferTooShort { .. }
         ));
     }
@@ -275,7 +275,7 @@ mod tests {
         bytes[1] = (bytes[1] & 0xF0) | ((fake_sl >> 8) as u8 & 0x0F);
         bytes[2] = (fake_sl & 0xFF) as u8;
         assert!(matches!(
-            Container::parse(&bytes).unwrap_err(),
+            ContainerSection::parse(&bytes).unwrap_err(),
             Error::SectionLengthOverflow { .. }
         ));
     }
@@ -283,7 +283,7 @@ mod tests {
     #[test]
     fn serialize_round_trip() {
         let data = [0x01u8, 0x02, 0x03];
-        let original = Container {
+        let original = ContainerSection {
             private_indicator: false,
             container_id: 0xABCD,
             version_number: 15,
@@ -294,12 +294,12 @@ mod tests {
         };
         let mut buf = vec![0u8; original.serialized_len()];
         original.serialize_into(&mut buf).unwrap();
-        assert_eq!(Container::parse(&buf).unwrap(), original);
+        assert_eq!(ContainerSection::parse(&buf).unwrap(), original);
     }
 
     #[test]
     fn serialize_rejects_output_buffer_too_small() {
-        let c = Container {
+        let c = ContainerSection {
             private_indicator: false,
             container_id: 0x0001,
             version_number: 0,
@@ -317,8 +317,8 @@ mod tests {
 
     #[test]
     fn table_trait_constants() {
-        assert_eq!(<Container as Table>::TABLE_ID, 0x75);
-        assert_eq!(<Container as Table>::PID, 0x0000);
+        assert_eq!(<ContainerSection as Table>::TABLE_ID, 0x75);
+        assert_eq!(<ContainerSection as Table>::PID, 0x0000);
     }
 
     #[cfg(feature = "serde")]
@@ -330,7 +330,7 @@ mod tests {
         // tables by asserting serialization yields valid, field-bearing JSON.
         let data = [0xCAu8, 0xFE];
         let bytes = build_container(0xBEEF, 9, true, 0, 0, &data);
-        let c = Container::parse(&bytes).unwrap();
+        let c = ContainerSection::parse(&bytes).unwrap();
         let v: serde_json::Value = serde_json::to_value(&c).unwrap();
         assert_eq!(v["container_id"], 0xBEEF);
         assert_eq!(v["version_number"], 9);

@@ -124,7 +124,7 @@ const RESERVED_NIBBLE: u8 = 0xF0;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
-pub struct Unt<'a> {
+pub struct UntSection<'a> {
     /// Action type (Table 12 of ETSI TS 102 006):
     /// 0x01 = System Software Update, 0x80–0xFF = user defined.
     pub action_type: u8,
@@ -177,7 +177,7 @@ pub struct Unt<'a> {
     pub platform_loop: &'a [u8],
 }
 
-impl<'a> Parse<'a> for Unt<'a> {
+impl<'a> Parse<'a> for UntSection<'a> {
     type Error = crate::error::Error;
 
     fn parse(bytes: &'a [u8]) -> Result<Self> {
@@ -186,7 +186,7 @@ impl<'a> Parse<'a> for Unt<'a> {
             return Err(Error::BufferTooShort {
                 need: MIN_SECTION_LEN,
                 have: bytes.len(),
-                what: "Unt",
+                what: "UntSection",
             });
         }
 
@@ -194,7 +194,7 @@ impl<'a> Parse<'a> for Unt<'a> {
         if bytes[0] != TABLE_ID {
             return Err(Error::UnexpectedTableId {
                 table_id: bytes[0],
-                what: "Unt",
+                what: "UntSection",
                 expected: &[TABLE_ID],
             });
         }
@@ -243,7 +243,7 @@ impl<'a> Parse<'a> for Unt<'a> {
         let platform_loop_end = total - CRC_LEN;
         let platform_loop = &bytes[platform_loop_start..platform_loop_end];
 
-        Ok(Unt {
+        Ok(UntSection {
             action_type,
             oui_hash,
             version_number,
@@ -258,7 +258,7 @@ impl<'a> Parse<'a> for Unt<'a> {
     }
 }
 
-impl Serialize for Unt<'_> {
+impl Serialize for UntSection<'_> {
     type Error = crate::error::Error;
 
     fn serialized_len(&self) -> usize {
@@ -323,12 +323,12 @@ impl Serialize for Unt<'_> {
     }
 }
 
-impl<'a> Table<'a> for Unt<'a> {
+impl<'a> Table<'a> for UntSection<'a> {
     const TABLE_ID: u8 = TABLE_ID;
     const PID: u16 = PID;
 }
 
-impl<'a> crate::traits::TableDef<'a> for Unt<'a> {
+impl<'a> crate::traits::TableDef<'a> for UntSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "UPDATE_NOTIFICATION";
 }
@@ -422,7 +422,7 @@ mod tests {
             &[], // empty platform loop
         );
 
-        let unt = Unt::parse(&bytes).expect("parse must succeed");
+        let unt = UntSection::parse(&bytes).expect("parse must succeed");
 
         assert_eq!(unt.action_type, 0x01);
         assert_eq!(unt.oui_hash, oui_hash);
@@ -440,7 +440,7 @@ mod tests {
     #[test]
     fn parse_current_next_false() {
         let bytes = build_unt(0x01, 0x5B, 1, false, 1, 2, 0x00015A, 0x01, &[], &[]);
-        let unt = Unt::parse(&bytes).unwrap();
+        let unt = UntSection::parse(&bytes).unwrap();
         assert!(!unt.current_next_indicator);
         assert_eq!(unt.section_number, 1);
         assert_eq!(unt.last_section_number, 2);
@@ -453,7 +453,7 @@ mod tests {
         // then platform_loop_length=0x0000.
         let plat: &[u8] = &[0x00, 0x04, 0x00, 0x00, 0x00, 0x00];
         let bytes = build_unt(0x01, 0x5B, 3, true, 0, 0, 0x00015A, 0xFF, &[], plat);
-        let unt = Unt::parse(&bytes).unwrap();
+        let unt = UntSection::parse(&bytes).unwrap();
         assert_eq!(unt.platform_loop, plat);
         assert_eq!(unt.processing_order, 0xFF);
     }
@@ -463,7 +463,7 @@ mod tests {
     fn parse_rejects_wrong_table_id() {
         let mut bytes = build_unt(0x01, 0x5B, 0, true, 0, 0, 0x00015A, 0x00, &[], &[]);
         bytes[0] = 0x4A; // BAT table_id — not 0x4B
-        let err = Unt::parse(&bytes).unwrap_err();
+        let err = UntSection::parse(&bytes).unwrap_err();
         assert!(
             matches!(err, Error::UnexpectedTableId { table_id: 0x4A, .. }),
             "expected UnexpectedTableId(0x4A), got {err:?}"
@@ -474,7 +474,7 @@ mod tests {
     /// `Error::BufferTooShort`.
     #[test]
     fn parse_rejects_short_buffer() {
-        let err = Unt::parse(&[TABLE_ID, 0x00]).unwrap_err();
+        let err = UntSection::parse(&[TABLE_ID, 0x00]).unwrap_err();
         assert!(
             matches!(err, Error::BufferTooShort { .. }),
             "expected BufferTooShort, got {err:?}"
@@ -485,7 +485,7 @@ mod tests {
     /// `Error::OutputBufferTooSmall`.
     #[test]
     fn serialize_rejects_small_output_buffer() {
-        let unt = Unt {
+        let unt = UntSection {
             action_type: 0x01,
             oui_hash: 0x5B,
             version_number: 0,
@@ -505,14 +505,14 @@ mod tests {
         );
     }
 
-    /// Serialize a `Unt` → parse → assert structural equality (round-trip).
+    /// Serialize a `UntSection` → parse → assert structural equality (round-trip).
     #[test]
     fn serialize_round_trip() {
         let common_descs: &[u8] = &[0x66, 0x04, 0x00, 0x0A, 0x00, 0x00];
         // Minimal compatibilityDescriptor + empty platform_loop_length.
         let plat: &[u8] = &[0x00, 0x04, 0x00, 0x00, 0x00, 0x00];
 
-        let original = Unt {
+        let original = UntSection {
             action_type: 0x01,
             oui_hash: 0x5B,
             version_number: 15,
@@ -530,7 +530,7 @@ mod tests {
             .serialize_into(&mut buf)
             .expect("serialize must succeed");
 
-        let reparsed = Unt::parse(&buf).expect("reparse must succeed");
+        let reparsed = UntSection::parse(&buf).expect("reparse must succeed");
         assert_eq!(original, reparsed);
     }
 }

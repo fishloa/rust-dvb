@@ -1,5 +1,73 @@
 # Changelog
 
+## 4.0.0 — 2026-06-08
+
+A deliberate API break that separates **one wire section** from a **complete
+logical table**. In 3.x the single-section parsers carried table names (`Nit`,
+`Sdt`, `AnyTable`) even though each returns one PSI/SI section; consumers that
+deduped by `version_number` silently dropped every section after the first and
+truncated multi-section NIT/BAT/SDT/EIT tables (the live Astra 19.2°E failure in
+#32 — half the transponders and whole networks lost). 4.0 renames the
+single-section parsers to `*Section`, and adds a `collect` module that assembles
+sections `0..=last_section_number` into a complete, owned table. See
+[`MIGRATION-4.0.md`](MIGRATION-4.0.md) for every breaking change with
+before/after code. (#32)
+
+### Breaking
+
+- **Single-section parser types are now `*Section`.** Every one-section parser
+  uses a `Section` suffix and Rust CamelCase acronyms: `Nit` → `NitSection`,
+  `Sdt` → `SdtSection`, `Pat` → `PatSection`, … (all 23 — `Ait`, `Bat`, `Cat`,
+  `Cit`, `Container`, `Dit`, `Eit`, `Int`, `MpeFec`, `MpeIfec`, `Nit`, `Pat`,
+  `Pmt`, `Rct`, `Rnt`, `Rst`, `Sat`, `Sdt`, `Sit`, `St`, `Tdt`, `Tot`, `Tsdt`,
+  `Unt`). `MpeDatagramSection`, `DsmccSection`, `ProtectionMessageSection`, and
+  `DownloadableFontInfoSection` already had section-shaped names. There are no
+  compatibility aliases. See
+  [MIGRATION-4.0.md §1](MIGRATION-4.0.md#1-section-parser-types-are-now-section).
+- **`AnyTable` → `AnyTableSection`.** The dynamic dispatcher parses exactly one
+  complete section; the enum and its variants are renamed accordingly, and
+  `parse_as` moves with it. serde variant keys gain the section suffix
+  (`AnyTableSection::PatSection` → `{"patSection": …}`). See
+  [MIGRATION-4.0.md §2](MIGRATION-4.0.md#2-anytable-is-now-anytablesection).
+- **`SectionEvent::table()` → `table_section()`.** Demux still emits changed
+  sections, not complete logical tables; feed `event.bytes()` to a collector for
+  the whole table. See
+  [MIGRATION-4.0.md §3](MIGRATION-4.0.md#3-sectioneventtable-is-now-table_section).
+- **`TableId` variants are now CamelCase.** `TableId::PAT` → `TableId::Pat`,
+  `TableId::MPE_FEC` → `TableId::MpeFec`, … keeping the byte-value enum visually
+  distinct from the parser types. Long semantic variants
+  (`NetworkInformationActual`, …) are unchanged. See
+  [MIGRATION-4.0.md §7](MIGRATION-4.0.md#7-tableid-variants-use-camelcase).
+
+### Added
+
+- **`collect` module — section → complete multi-section table.** The next rung
+  above the single-section parsers: assemble sections `0..=last_section_number`
+  of one version into a complete, owned value, fixing the multi-section
+  truncation class of bug (#32) once for every consumer.
+  - `SectionSetCollector` — feed complete section bytes with `push_section` /
+    `push_section_with_pid`; returns `Some(CompleteSectionSet)` only when all
+    sections of the current version have arrived (validates the long-form CRC
+    before retaining bytes; discards the partial set and restarts on a version
+    bump).
+  - `CompleteSectionSet` — owns the original section bytes so parsed views keep
+    borrowing from them: generic `.table::<T>()` (any long-form section parser,
+    in section-number order), `.section_bytes()` for re-serialization, and the
+    complete logical helpers `.nit()` / `.bat()` / `.sdt()` / `.eit()` (and
+    `_with_registry` variants) producing `CompleteNit` / `CompleteBat` /
+    `CompleteSdt` / `CompleteEit` with entries flattened across all sections.
+  - `EitCollector` / `CompletedEit` — EIT is complete only when every schedule
+    `table_id` through `last_table_id` has completed, not when one `table_id`
+    has all its sections. EIT schedule sub-tables version independently, so
+    `CompleteEitSchedule` exposes per-`table_id` versions
+    (`table_versions()` / `tables()`); `retain_logical` / `clear` prune
+    long-running EPG state on the caller's retention boundary.
+  - `ParsedDescriptorLoop` — descriptor loops in complete logical views stay
+    typed (`.descriptors()` → `&[Result<AnyDescriptor>]`) without losing the
+    original wire bytes (`.raw()`).
+
+  See [MIGRATION-4.0.md §4–§6](MIGRATION-4.0.md#4-multi-section-tables-use-collect).
+
 ## 3.1.2 — 2026-06-07
 
 ### Fixed

@@ -9,7 +9,7 @@ to its ETSI / ISO clause, has a symmetric serializer, and is round-trip tested.
 
 ```text
 TS (T2-MI PID) ─▶ dvb-t2mi ─▶ BBFrame ─▶ dvb-bbframe ─▶ inner TS ─▶ dvb-si ─▶ typed SI
-   T2-MI pump        AnyPayload      Bbheader + up_iter        SiDemux      AnyTable / AnyDescriptor
+   T2-MI pump        AnyPayload      Bbheader + up_iter        SiDemux      AnyTableSection + collect
 ```
 
 Each crate is independently useful; together they decode a DVB-T2 modulator
@@ -28,7 +28,7 @@ For GSE, see the existing [`dvb-gse`](https://crates.io/crates/dvb-gse) crate.
 
 ## Quickstart
 
-Demux a `.ts` capture and print its SI tables — the
+Demux a `.ts` capture and print its SI sections — the
 [`si_dump`](dvb-si/examples/si_dump.rs) example, in full:
 
 ```console
@@ -47,17 +47,17 @@ $ cargo run -p dvb-si --example si_dump -- dvb-si/tests/fixtures/m6-single.ts --
 }
 ```
 
-In code, the same pipeline is a feed-and-match loop:
+In code, the section-level pipeline is a feed-and-match loop:
 
 ```rust
 use dvb_si::demux::SiDemux;
 use dvb_si::descriptors::AnyDescriptor;
-use dvb_si::tables::AnyTable;
+use dvb_si::tables::AnyTableSection;
 
 let mut demux = SiDemux::builder().build();
 for packet in ts_packets {                       // each aligned 188-byte packet
     for event in demux.feed(&packet) {           // changed sections only
-        if let Ok(AnyTable::Sdt(sdt)) = event.table() {
+        if let Ok(AnyTableSection::SdtSection(sdt)) = event.table_section() {
             for service in &sdt.services {
                 for item in service.descriptors.iter().flatten() {
                     if let AnyDescriptor::Service(svc) = item {
@@ -93,6 +93,7 @@ discipline is spec fidelity, verified several ways over:
 ## Documentation
 
 - Per-crate front pages: [dvb-si](dvb-si/README.md) · [dvb-t2mi](dvb-t2mi/README.md) · [dvb-bbframe](dvb-bbframe/README.md) · [dvb-common](dvb-common/README.md)
+- [`dvb-si` 4.0 migration guide](dvb-si/MIGRATION-4.0.md) — 3.x → 4.0 breaking changes: section parser names (`NitSection`, `SitSection`, …), `AnyTableSection`, CamelCase `TableId`, and complete multi-section table collection.
 - [`dvb-si` 3.1 migration guide](dvb-si/MIGRATION-3.1.md) — 1.x / 2.x → 3.1 breaking changes (typed `DescriptorLoop`, Serialize-only serde, typed SIT, optional `yoke`) with before/after code.
 - [`dvb-si` 2.0 migration guide](dvb-si/MIGRATION-2.0.md) — 1.x → 2.0 breaking changes with before/after code.
 - API docs: [docs.rs/dvb-si](https://docs.rs/dvb-si) (each crate's docs.rs front page carries a runnable quickstart).

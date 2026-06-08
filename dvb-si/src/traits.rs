@@ -26,9 +26,9 @@ pub trait DescriptorDef<'a>: Parse<'a, Error = crate::error::Error> {
     const NAME: &'static str;
 }
 
-/// Implemented by every typed table; drives [`crate::tables::AnyTable`]
-/// dispatch. `TABLE_ID_RANGES` lists the inclusive `(lo, hi)` table_id ranges
-/// this type accepts.
+/// Implemented by every typed table-section parser; drives
+/// [`crate::tables::AnyTableSection`] dispatch. `TABLE_ID_RANGES` lists the
+/// inclusive `(lo, hi)` table_id ranges this type accepts.
 pub trait TableDef<'a>: dvb_common::Parse<'a, Error = crate::error::Error> {
     /// Inclusive `(lo, hi)` table_id ranges this type parses.
     ///
@@ -44,7 +44,7 @@ pub trait TableDef<'a>: dvb_common::Parse<'a, Error = crate::error::Error> {
     const NAME: &'static str;
 }
 
-/// Contract every section-carried table implements.
+/// Contract every serializable section-carried table parser implements.
 pub trait Table<'a>: Parse<'a> + Serialize {
     /// Expected `table_id` for this table.
     ///

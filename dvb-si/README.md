@@ -5,19 +5,47 @@ MPEG-2 PSI tables it builds on, the DVB-allocated companion tables, and the
 DSM-CC data carousel.
 
 **Complete coverage: every allocated `table_id` in EN 300 468 V1.19.1
-Table 2 (29 table types; 28 dispatched by `AnyTable` + the type-keyed MPE datagram view) and every allocated `descriptor_tag` in Table 12
+Table 2 (29 section types; 28 dispatched by `AnyTableSection` + the type-keyed MPE datagram view) and every allocated `descriptor_tag` in Table 12
 (0x40–0x7F, 64 descriptors) is implemented**, each with a symmetric
 `Parse` / `Serialize` pair and round-trip tests. Layouts are derived from the
 ETSI specs (vendored in the repo and transcribed into reviewable markdown) and
 validated against live broadcast captures.
 
-## Table coverage
+## 4.0 API model
 
-Every table: typed header fields, symmetric parse/serialize, round-trip
+`dvb-si` 4.0 makes the PSI/SI layering explicit:
+
+- Section parsers are named `*Section`: `PatSection`, `NitSection`,
+  `SdtSection`, `SitSection`, `EitSection`, and so on. Each value is exactly one
+  wire section and still borrows from the input bytes where possible.
+- `AnyTableSection` dispatches one complete section by `table_id`. Demux events
+  expose this through `SectionEvent::table_section()`.
+- `collect::SectionSetCollector` assembles every long-form multi-section table
+  using the common `section_number` / `last_section_number` fields. A completed
+  set owns the original section bytes and can be parsed generically:
+  `complete.table::<PatSection>()`.
+- `collect::CompleteNit`, `CompleteBat`, `CompleteSdt`, and `CompleteEit` add
+  flattened logical-table views where that is more useful than a vector of
+  sections. Their descriptor loops are parsed through `AnyDescriptor` while the
+  raw descriptor-loop bytes remain available.
+- `collect::EitCollector` handles the EIT schedule rule that spans table IDs
+  through `last_table_id`; ordinary section-number collection is not enough for
+  schedule EIT. EIT schedule sub-tables version independently, and the
+  collector exposes `clear()` / `retain_logical()` for long-running EPG pruning.
+- `TableId` variants use Rust CamelCase names (`TableId::Pat`,
+  `TableId::NetworkInformationActual`, `TableId::MpeFec`), while section parser
+  types carry the `Section` suffix.
+
+There are no 3.x compatibility aliases in 4.0. See
+[`MIGRATION-4.0.md`](MIGRATION-4.0.md) for before/after examples.
+
+## Section coverage
+
+Every section parser: typed header fields, symmetric parse/serialize, round-trip
 tested. Per the crate's zero-copy convention, descriptor loops and repeated
-sub-structures are borrowed `&[u8]` slices the caller walks with the
-descriptor parsers — noted below only where a table goes further or stays
-deliberately raw.
+sub-structures borrow from the input bytes. Flat descriptor loops are
+`DescriptorLoop` values that walk into typed descriptors; notes below call out
+only tables that go further or deliberately keep a nested structure raw.
 
 | table_id | Table | Spec | Status |
 |---|---|---|---|
@@ -39,7 +67,7 @@ deliberately raw.
 | 0x72 | ST — Stuffing | EN 300 468 §5.2.8 | ✅ full |
 | 0x73 | TOT — Time Offset | EN 300 468 §5.2.6 | ✅ full (incl. the SSI=0-with-CRC framing exception) |
 | 0x74 | AIT — Application Information | TS 102 809 | ✅ full (typed application loop), validated vs live HbbTV capture |
-| 0x75 | Container | TS 102 323 | ✅ full |
+| 0x75 | Container | TS 102 323 | ✅ full (`ContainerSection`) |
 | 0x76 | RCT — Related Content | TS 102 323 | ✅ full |
 | 0x77 | CIT — Content Identifier | TS 102 323 | ✅ full |
 | 0x78 | MPE-FEC | EN 301 192 §9.9 | ✅ full (typed real_time_parameters) |
@@ -228,17 +256,17 @@ run against real transponder captures.
 
 Feed 188-byte TS packets to [`SiDemux`]; it filters by PID, reassembles
 sections, validates CRCs, follows the PAT to PMT PIDs, and version-gates so a
-steady carousel emits each table only once. You get a `SectionEvent` per
+steady carousel emits each changed section only once. You get a `SectionEvent` per
 **changed** section:
 
 ```rust
 use dvb_si::demux::SiDemux;
-use dvb_si::tables::AnyTable;
+use dvb_si::tables::AnyTableSection;
 
 let mut demux = SiDemux::builder().build();
 for packet in ts_packets {                      // each aligned 188-byte packet
     for event in demux.feed(&packet) {          // changed sections only
-        if let Ok(AnyTable::Pat(pat)) = event.table() {
+        if let Ok(AnyTableSection::PatSection(pat)) = event.table_section() {
             println!("PAT v{} on {}", event.version().unwrap_or(0), event.pid());
             let _ = pat;
         }
@@ -251,8 +279,8 @@ See [`examples/si_dump.rs`](examples/si_dump.rs) for a complete file-reading CLI
 
 ## Typed dispatch
 
-You rarely match table_ids or descriptor_tags by hand. `AnyTable::parse`
-dispatches a complete section to the right typed table; a table's descriptor-loop
+You rarely match table_ids or descriptor_tags by hand. `AnyTableSection::parse`
+dispatches a complete section to the right typed section parser; a section's descriptor-loop
 field is a `DescriptorLoop` whose `.iter()` yields `AnyDescriptor` values (typed
 where known, `Unknown` otherwise, never panicking — `parse_loop` does the same
 for a free byte slice); and `DescriptorRegistry` lets you plug in private
@@ -271,24 +299,92 @@ for item in eit_event.descriptors.iter() {       // DescriptorLoop::iter()
 }
 ```
 
-> **Upgrading from 1.x / 2.x?** Table descriptor-loop fields are now
-> `DescriptorLoop` (call `.iter()` / `.raw()`), three tables (`Cat`, `Tsdt`,
-> `Sit`) became borrowed, serde is Serialize-only, the SIT service loop is typed,
-> and those loops serialize as typed JSON arrays. See
-> **[MIGRATION-3.1.md](MIGRATION-3.1.md)**. (1.x → 2.0:
-> [MIGRATION-2.0.md](MIGRATION-2.0.md).)
+> **Upgrading?** For 3.x → 4.0, see **[MIGRATION-4.0.md](MIGRATION-4.0.md)**:
+> section parser renames, `AnyTableSection`, `table_section()`, CamelCase
+> `TableId`, and multi-section collection. For older breaks, see
+> **[MIGRATION-3.1.md](MIGRATION-3.1.md)** and
+> **[MIGRATION-2.0.md](MIGRATION-2.0.md)**.
 
 ## Usage
 
 ```rust
 use dvb_common::Parse;
-use dvb_si::tables::sdt::Sdt;
+use dvb_si::tables::sdt::SdtSection;
 
 // `section_bytes`: one complete SDT section, e.g. from `SectionReassembler`.
-let sdt = Sdt::parse(section_bytes)?;
+let sdt = SdtSection::parse(section_bytes)?;
 for service in &sdt.services {
     println!("service_id = {}", service.service_id);
 }
+```
+
+Collect all sections for a logical table before using table-wide fields. In a
+live stream, collector errors are section-scoped: log/drop that input section
+and keep feeding later sections unless your application chooses strict failure.
+
+```rust
+use dvb_si::collect::{CompletedEit, EitCollector, SectionSetCollector};
+use dvb_si::demux::SiDemux;
+use dvb_si::tables::eit;
+use dvb_si::tables::nit::{self, NitSection};
+
+let mut demux = SiDemux::builder().build();
+let mut nit_sections = SectionSetCollector::new();
+let mut eit_sections = EitCollector::new();
+
+for event in demux.feed(&packet) {
+    match event.table_id() {
+        nit::TABLE_ID_ACTUAL | nit::TABLE_ID_OTHER => {
+            let collected = match nit_sections.push_section_with_pid(
+                Some(event.pid().value()),
+                event.bytes(),
+            ) {
+                Ok(collected) => collected,
+                Err(error) => {
+                    eprintln!("dropping bad SI section: {error}");
+                    continue;
+                }
+            };
+            if let Some(complete) = collected {
+                let nit = complete.nit()?;        // flattened logical NIT
+                let raw_sections = complete.table::<NitSection>()?; // generic section view
+                let _ = (nit, raw_sections);
+            }
+        }
+        eit::TABLE_ID_PF_ACTUAL..=eit::TABLE_ID_SCHEDULE_OTHER_LAST => {
+            let collected = match eit_sections.push_section_with_pid(
+                Some(event.pid().value()),
+                event.bytes(),
+            ) {
+                Ok(collected) => collected,
+                Err(error) => {
+                    eprintln!("dropping bad EIT section: {error}");
+                    continue;
+                }
+            };
+            if let Some(done) = collected {
+                match done {
+                    CompletedEit::PresentFollowing(set) => {
+                        let eit = set.eit()?;     // one p/f EIT section set
+                        let _ = eit;
+                    }
+                    CompletedEit::Schedule(schedule) => {
+                        for (table_id, version) in schedule.table_versions() {
+                            println!("completed EIT schedule 0x{table_id:02X} v{version}");
+                        }
+                        for table in schedule.tables()? {
+                            let _ = table.events;
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+// Long-running EPG collectors can prune application-defined old state.
+eit_sections.retain_logical(|key| application_still_needs(key));
 ```
 
 ## Principles
@@ -315,16 +411,16 @@ thread) without re-parsing or a hand-written mirror type:
 
 ```rust
 use std::sync::Arc;
-use dvb_si::{owned::Owned, tables::pmt::Pmt};
+use dvb_si::{owned::Owned, tables::pmt::PmtSection};
 use dvb_common::Parse;
 
 let bytes: Arc<[u8]> = Arc::from(section);             // own the section
-let pmt: Owned<Pmt<'static>> = Owned::try_new(bytes, |b| Pmt::parse(b))?;
-let view: &Pmt = pmt.get();                            // no re-parse, no lifetime
+let pmt: Owned<PmtSection<'static>> = Owned::try_new(bytes, |b| PmtSection::parse(b))?;
+let view: &PmtSection = pmt.get();                            // no re-parse, no lifetime
 ```
 
 ```toml
-dvb-si = { version = "3.1", default-features = false }  # tight build
+dvb-si = { version = "4.0", default-features = false }  # tight build
 ```
 
 ## Family
