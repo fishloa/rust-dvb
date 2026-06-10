@@ -143,49 +143,139 @@ pub enum ExtensionTag {
     VvcSubpictures = 0x23,
 }
 
-/// Typed body of an extension descriptor, keyed on `descriptor_tag_extension`.
-///
-/// Unrecognised or not-yet-typed discriminants land in [`ExtensionBody::Raw`],
-/// which carries the selector bytes verbatim so the descriptor round-trips.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub enum ExtensionBody<'a> {
+/// Generates the extension-body dispatch from one list (ADR-0001): the
+/// [`ExtensionBody`] enum (+ a `Raw` fall-through), the `parse_body`
+/// dispatcher, the `selector_len`/`write_selector` serialize delegation, and
+/// a drift test pinning each `descriptor_tag_extension` literal to the body
+/// type's [`ExtensionBodyDef::TAG_EXTENSION`] and its [`ExtensionTag`] variant.
+/// One line per typed body — the single source of truth for the sub-dispatch.
+macro_rules! declare_extension_bodies {
+    (
+        $lt:lifetime;
+        $( $(#[doc = $doc:literal])* $variant:ident = $tag:literal => $($path:ident)::+ $(<$plt:lifetime>)? ),+ $(,)?
+    ) => {
+        /// Typed body of an extension descriptor, keyed on `descriptor_tag_extension`.
+        ///
+        /// Unrecognised or not-yet-typed discriminants land in [`ExtensionBody::Raw`],
+        /// which carries the selector bytes verbatim so the descriptor round-trips.
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+        pub enum ExtensionBody<$lt> {
+            $(
+                $(#[doc = $doc])*
+                $variant($($path)::+ $(<$plt>)?),
+            )+
+            /// Any not-yet-typed / unknown / user-defined discriminant: selector bytes verbatim.
+            Raw(&$lt [u8]),
+        }
+
+        /// Parse the selector bytes (everything after `descriptor_tag_extension`)
+        /// into a typed body, falling through to [`ExtensionBody::Raw`].
+        fn parse_body(tag_extension: u8, sel: &[u8]) -> Result<ExtensionBody<'_>> {
+            Ok(match tag_extension {
+                $(
+                    $tag => ExtensionBody::$variant(<$($path)::+>::parse(sel)?),
+                )+
+                _ => ExtensionBody::Raw(sel),
+            })
+        }
+
+        impl ExtensionBody<'_> {
+            /// Selector-byte length (everything after `descriptor_tag_extension`).
+            fn selector_len(&self) -> usize {
+                match self {
+                    $(
+                        ExtensionBody::$variant(b) => b.serialized_len(),
+                    )+
+                    ExtensionBody::Raw(s) => s.len(),
+                }
+            }
+
+            /// Write the selector bytes into `out` (assumed `>= selector_len()`).
+            fn write_selector(&self, out: &mut [u8]) {
+                match self {
+                    $(
+                        ExtensionBody::$variant(b) => {
+                            // `ExtensionDescriptor::serialize_into` sizes `out` from
+                            // `selector_len()`, so `serialize_into` cannot fail.
+                            b.serialize_into(out)
+                                .expect("caller pre-sizes out to selector_len");
+                        }
+                    )+
+                    ExtensionBody::Raw(s) => out[..s.len()].copy_from_slice(s),
+                }
+            }
+        }
+
+        #[cfg(test)]
+        mod dispatch_drift {
+            use super::*;
+
+            /// The macro list is the single source of truth: each tag literal must
+            /// equal the body's `ExtensionBodyDef::TAG_EXTENSION`, its `NAME` must be
+            /// non-empty, and `kind()` must map the tag to the matching `ExtensionTag`.
+            #[test]
+            fn ext_dispatch_single_source() {
+                $(
+                    assert_eq!(
+                        $tag,
+                        <$($path)::+ as ExtensionBodyDef>::TAG_EXTENSION,
+                        concat!("TAG_EXTENSION drift for ", stringify!($variant)),
+                    );
+                    assert!(
+                        !<$($path)::+ as ExtensionBodyDef>::NAME.is_empty(),
+                        concat!("empty NAME for ", stringify!($variant)),
+                    );
+                    assert_eq!(
+                        ExtensionDescriptor {
+                            tag_extension: $tag,
+                            body: ExtensionBody::Raw(&[]),
+                        }
+                        .kind(),
+                        Some(ExtensionTag::$variant),
+                        concat!("kind() drift for ", stringify!($variant)),
+                    );
+                )+
+            }
+        }
+    };
+}
+
+declare_extension_bodies! {'a;
     /// `0x04` — T2_delivery_system (Table 133, §6.4.6.3).
-    T2DeliverySystem(T2DeliverySystem<'a>),
+    T2DeliverySystem = 0x04 => T2DeliverySystem<'a>,
     /// `0x06` — supplementary_audio (Table 153, §6.4.11).
-    SupplementaryAudio(SupplementaryAudio<'a>),
+    SupplementaryAudio = 0x06 => SupplementaryAudio<'a>,
     /// `0x07` — network_change_notify (Table 149, §6.4.9).
-    NetworkChangeNotify(NetworkChangeNotify<'a>),
+    NetworkChangeNotify = 0x07 => NetworkChangeNotify<'a>,
     /// `0x08` — message (Table 148, §6.4.9).
-    Message(Message<'a>),
+    Message = 0x08 => Message<'a>,
     /// `0x09` — target_region (Table 156, §6.4.12).
-    TargetRegion(TargetRegion<'a>),
+    TargetRegion = 0x09 => TargetRegion<'a>,
     /// `0x0A` — target_region_name (Table 157, §6.4.13).
-    TargetRegionName(TargetRegionName<'a>),
+    TargetRegionName = 0x0A => TargetRegionName<'a>,
     /// `0x0B` — service_relocated (Table 152, §6.4.10).
-    ServiceRelocated(ServiceRelocated),
+    ServiceRelocated = 0x0B => ServiceRelocated,
     /// `0x0D` — C2_delivery_system (Table 115, §6.4.6.1).
-    C2DeliverySystem(C2DeliverySystem),
+    C2DeliverySystem = 0x0D => C2DeliverySystem,
     /// `0x11` — T2-MI (Table 158, §6.4.14).
-    T2mi(T2miDescriptor<'a>),
+    T2mi = 0x11 => T2miDescriptor<'a>,
     /// `0x10` — video_depth_range (Table 160, §6.4.16.1).
-    VideoDepthRange(VideoDepthRangeDescriptor<'a>),
+    VideoDepthRange = 0x10 => VideoDepthRangeDescriptor<'a>,
     /// `0x13` — URI_linkage (Table 159, §6.4.16.1).
-    UriLinkage(UriLinkage<'a>),
+    UriLinkage = 0x13 => UriLinkage<'a>,
     /// `0x15` — AC-4 (annex D).
-    Ac4(Ac4<'a>),
+    Ac4 = 0x15 => Ac4<'a>,
     /// `0x16` — C2_bundle_delivery_system (Table 139, §6.4.6.4).
-    C2BundleDeliverySystem(C2BundleDeliverySystem),
+    C2BundleDeliverySystem = 0x16 => C2BundleDeliverySystem,
     /// `0x17` — S2X_satellite_delivery_system (Table 140, §6.4.6.5.2).
-    S2XSatelliteDeliverySystem(S2XSatelliteDeliverySystem<'a>),
+    S2XSatelliteDeliverySystem = 0x17 => S2XSatelliteDeliverySystem<'a>,
     /// `0x19` — audio_preselection (Table 110, §6.4.1).
-    AudioPreselection(AudioPreselection<'a>),
+    AudioPreselection = 0x19 => AudioPreselection<'a>,
     /// `0x20` — TTML_subtitling (EN 303 560 Table 1, §5.2.1.1).
-    TtmlSubtitling(TtmlSubtitling<'a>),
+    TtmlSubtitling = 0x20 => TtmlSubtitling<'a>,
     /// `0x23` — vvc_subpictures (Table 162a, §6.4.17).
-    VvcSubpictures(VvcSubpicturesDescriptor<'a>),
-    /// Any not-yet-typed / unknown / user-defined discriminant: selector bytes verbatim.
-    Raw(&'a [u8]),
+    VvcSubpictures = 0x23 => VvcSubpicturesDescriptor<'a>,
 }
 
 /// Per-body metadata for the extension-descriptor sub-dispatch — the
@@ -1786,33 +1876,6 @@ impl Serialize for VideoDepthRangeDescriptor<'_> {
     }
 }
 
-fn parse_body(tag_extension: u8, sel: &[u8]) -> Result<ExtensionBody<'_>> {
-    Ok(match tag_extension {
-        0x04 => ExtensionBody::T2DeliverySystem(<T2DeliverySystem as Parse>::parse(sel)?),
-        0x06 => ExtensionBody::SupplementaryAudio(<SupplementaryAudio as Parse>::parse(sel)?),
-        0x07 => ExtensionBody::NetworkChangeNotify(<NetworkChangeNotify as Parse>::parse(sel)?),
-        0x08 => ExtensionBody::Message(<Message as Parse>::parse(sel)?),
-        0x09 => ExtensionBody::TargetRegion(<TargetRegion as Parse>::parse(sel)?),
-        0x0A => ExtensionBody::TargetRegionName(<TargetRegionName as Parse>::parse(sel)?),
-        0x0B => ExtensionBody::ServiceRelocated(<ServiceRelocated as Parse>::parse(sel)?),
-        0x0D => ExtensionBody::C2DeliverySystem(<C2DeliverySystem as Parse>::parse(sel)?),
-        0x10 => ExtensionBody::VideoDepthRange(<VideoDepthRangeDescriptor as Parse>::parse(sel)?),
-        0x11 => ExtensionBody::T2mi(<T2miDescriptor as Parse>::parse(sel)?),
-        0x13 => ExtensionBody::UriLinkage(<UriLinkage as Parse>::parse(sel)?),
-        0x15 => ExtensionBody::Ac4(<Ac4 as Parse>::parse(sel)?),
-        0x16 => {
-            ExtensionBody::C2BundleDeliverySystem(<C2BundleDeliverySystem as Parse>::parse(sel)?)
-        }
-        0x17 => ExtensionBody::S2XSatelliteDeliverySystem(
-            <S2XSatelliteDeliverySystem as Parse>::parse(sel)?,
-        ),
-        0x19 => ExtensionBody::AudioPreselection(<AudioPreselection as Parse>::parse(sel)?),
-        0x20 => ExtensionBody::TtmlSubtitling(<TtmlSubtitling as Parse>::parse(sel)?),
-        0x23 => ExtensionBody::VvcSubpictures(<VvcSubpicturesDescriptor as Parse>::parse(sel)?),
-        _ => ExtensionBody::Raw(sel),
-    })
-}
-
 impl<'a> Parse<'a> for ExtensionDescriptor<'a> {
     type Error = crate::error::Error;
     fn parse(bytes: &'a [u8]) -> Result<Self> {
@@ -1851,113 +1914,6 @@ impl<'a> Parse<'a> for ExtensionDescriptor<'a> {
             tag_extension,
             body,
         })
-    }
-}
-
-// ---------------------------------------------------------------------------
-//  Body serializers — report selector length + write the selector bytes
-// ---------------------------------------------------------------------------
-
-impl ExtensionBody<'_> {
-    /// Selector-byte length (everything after `descriptor_tag_extension`).
-    fn selector_len(&self) -> usize {
-        match self {
-            ExtensionBody::T2DeliverySystem(b) => b.serialized_len(),
-            ExtensionBody::SupplementaryAudio(b) => b.serialized_len(),
-            ExtensionBody::NetworkChangeNotify(b) => b.serialized_len(),
-            ExtensionBody::Message(b) => b.serialized_len(),
-            ExtensionBody::TargetRegion(b) => b.serialized_len(),
-            ExtensionBody::TargetRegionName(b) => b.serialized_len(),
-            ExtensionBody::ServiceRelocated(b) => b.serialized_len(),
-            ExtensionBody::C2DeliverySystem(b) => b.serialized_len(),
-            ExtensionBody::T2mi(b) => b.serialized_len(),
-            ExtensionBody::VideoDepthRange(b) => b.serialized_len(),
-            ExtensionBody::UriLinkage(b) => b.serialized_len(),
-            ExtensionBody::Ac4(b) => b.serialized_len(),
-            ExtensionBody::C2BundleDeliverySystem(b) => b.serialized_len(),
-            ExtensionBody::S2XSatelliteDeliverySystem(b) => b.serialized_len(),
-            ExtensionBody::AudioPreselection(b) => b.serialized_len(),
-            ExtensionBody::TtmlSubtitling(b) => b.serialized_len(),
-            ExtensionBody::VvcSubpictures(b) => b.serialized_len(),
-            ExtensionBody::Raw(s) => s.len(),
-        }
-    }
-
-    /// Write the selector bytes into `out` (assumed `>= selector_len()`).
-    fn write_selector(&self, out: &mut [u8]) {
-        match self {
-            ExtensionBody::T2DeliverySystem(b) => {
-                // `ExtensionDescriptor::serialize_into` sizes `out` from
-                // `selector_len()`, so `serialize_into` cannot fail.
-                b.serialize_into(out)
-                    .expect("caller pre-sizes out to selector_len");
-            }
-            ExtensionBody::SupplementaryAudio(b) => {
-                b.serialize_into(out)
-                    .expect("caller pre-sizes out to selector_len");
-            }
-            ExtensionBody::NetworkChangeNotify(b) => {
-                b.serialize_into(out)
-                    .expect("caller pre-sizes out to selector_len");
-            }
-            ExtensionBody::Message(b) => {
-                b.serialize_into(out)
-                    .expect("caller pre-sizes out to selector_len");
-            }
-            ExtensionBody::TargetRegion(b) => {
-                b.serialize_into(out)
-                    .expect("caller pre-sizes out to selector_len");
-            }
-            ExtensionBody::TargetRegionName(b) => {
-                b.serialize_into(out)
-                    .expect("caller pre-sizes out to selector_len");
-            }
-            ExtensionBody::ServiceRelocated(b) => {
-                b.serialize_into(out)
-                    .expect("caller pre-sizes out to selector_len");
-            }
-            ExtensionBody::C2DeliverySystem(b) => {
-                b.serialize_into(out)
-                    .expect("caller pre-sizes out to selector_len");
-            }
-            ExtensionBody::T2mi(b) => {
-                b.serialize_into(out)
-                    .expect("caller pre-sizes out to selector_len");
-            }
-            ExtensionBody::VideoDepthRange(b) => {
-                b.serialize_into(out)
-                    .expect("caller pre-sizes out to selector_len");
-            }
-            ExtensionBody::UriLinkage(b) => {
-                b.serialize_into(out)
-                    .expect("caller pre-sizes out to selector_len");
-            }
-            ExtensionBody::Ac4(b) => {
-                b.serialize_into(out)
-                    .expect("caller pre-sizes out to selector_len");
-            }
-            ExtensionBody::C2BundleDeliverySystem(b) => {
-                b.serialize_into(out)
-                    .expect("caller pre-sizes out to selector_len");
-            }
-            ExtensionBody::S2XSatelliteDeliverySystem(b) => {
-                b.serialize_into(out)
-                    .expect("caller pre-sizes out to selector_len");
-            }
-            ExtensionBody::AudioPreselection(b) => {
-                b.serialize_into(out)
-                    .expect("caller pre-sizes out to selector_len");
-            }
-            ExtensionBody::TtmlSubtitling(b) => {
-                b.serialize_into(out)
-                    .expect("caller pre-sizes out to selector_len");
-            }
-            ExtensionBody::VvcSubpictures(b) => {
-                b.serialize_into(out)
-                    .expect("caller pre-sizes out to selector_len");
-            }
-            ExtensionBody::Raw(s) => out[..s.len()].copy_from_slice(s),
-        }
     }
 }
 
@@ -2879,63 +2835,5 @@ mod tests {
         assert!(json.contains("\"tag_extension\":35"));
         assert!(json.contains("\"VvcSubpictures\""));
         assert!(json.contains("\"service_description\":\"Hi\""));
-    }
-}
-
-#[cfg(test)]
-mod dispatch_drift {
-    use super::*;
-
-    macro_rules! assert_entry {
-        ($tag:literal, $variant:ident, $type:ty) => {
-            assert_eq!(
-                $tag,
-                <$type as ExtensionBodyDef>::TAG_EXTENSION,
-                concat!("TAG_EXTENSION drift for ", stringify!($type)),
-            );
-            assert!(
-                !<$type as ExtensionBodyDef>::NAME.is_empty(),
-                concat!("empty NAME for ", stringify!($type)),
-            );
-            assert_eq!(
-                ExtensionDescriptor {
-                    tag_extension: $tag,
-                    body: ExtensionBody::Raw(&[]),
-                }
-                .kind(),
-                Some(ExtensionTag::$variant),
-                concat!(
-                    "kind() drift for tag ",
-                    stringify!($tag),
-                    " / ",
-                    stringify!($variant),
-                ),
-            );
-        };
-    }
-
-    #[test]
-    fn ext_dispatch_single_source() {
-        assert_entry!(0x04, T2DeliverySystem, T2DeliverySystem<'_>);
-        assert_entry!(0x06, SupplementaryAudio, SupplementaryAudio<'_>);
-        assert_entry!(0x07, NetworkChangeNotify, NetworkChangeNotify<'_>);
-        assert_entry!(0x08, Message, Message<'_>);
-        assert_entry!(0x09, TargetRegion, TargetRegion<'_>);
-        assert_entry!(0x0A, TargetRegionName, TargetRegionName<'_>);
-        assert_entry!(0x0B, ServiceRelocated, ServiceRelocated);
-        assert_entry!(0x0D, C2DeliverySystem, C2DeliverySystem);
-        assert_entry!(0x10, VideoDepthRange, VideoDepthRangeDescriptor<'_>);
-        assert_entry!(0x11, T2mi, T2miDescriptor<'_>);
-        assert_entry!(0x13, UriLinkage, UriLinkage<'_>);
-        assert_entry!(0x15, Ac4, Ac4<'_>);
-        assert_entry!(0x16, C2BundleDeliverySystem, C2BundleDeliverySystem);
-        assert_entry!(
-            0x17,
-            S2XSatelliteDeliverySystem,
-            S2XSatelliteDeliverySystem<'_>
-        );
-        assert_entry!(0x19, AudioPreselection, AudioPreselection<'_>);
-        assert_entry!(0x20, TtmlSubtitling, TtmlSubtitling<'_>);
-        assert_entry!(0x23, VvcSubpictures, VvcSubpicturesDescriptor<'_>);
     }
 }
