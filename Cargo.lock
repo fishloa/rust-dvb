@@ -107,6 +107,7 @@ dependencies = [
  "dvb-bbframe",
  "dvb-common",
  "dvb-si",
+ "erased-serde",
  "num_enum",
  "serde",
  "serde_json",

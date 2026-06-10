@@ -58,6 +58,21 @@ macro_rules! declare_payloads {
                 #[allow(missing_docs)]
                 $variant($($path)::+ $(<$plt>)?),
             )+
+            /// Runtime-registered custom payload (see [`PayloadRegistry`]).
+            ///
+            /// [`PayloadRegistry`]: crate::payload::registry::PayloadRegistry
+            Other {
+                /// The raw `packet_type` byte.
+                packet_type: u8,
+                /// The parsed, type-erased payload value. Use
+                /// [`PayloadObject::as_any`][crate::payload::registry::PayloadObject::as_any]
+                /// followed by `downcast_ref` to recover the concrete type.
+                #[cfg_attr(
+                    feature = "serde",
+                    serde(serialize_with = "crate::payload::registry::serialize_erased")
+                )]
+                value: Box<dyn crate::payload::registry::PayloadObject>,
+            },
             /// Packet type with no typed implementation; `body` contains the
             /// raw payload bytes (post-header, pre-CRC).
             Unknown {
@@ -74,7 +89,6 @@ macro_rules! declare_payloads {
                     Self::$variant(p)
                 }
             }
-            impl<$lt> crate::traits::sealed::Sealed for $($path)::+ $(<$plt>)? {}
         )+
 
         impl<$lt> AnyPayload<$lt> {
@@ -84,8 +98,9 @@ macro_rules! declare_payloads {
 
             /// Diagnostic name of the contained payload — the type's
             /// [`PayloadDef::NAME`](crate::traits::PayloadDef::NAME)
-            /// (`"BBFRAME"`, `"L1_CURRENT"`, …); `"UNKNOWN"` for
-            /// [`AnyPayload::Unknown`].
+            /// (`"BBFRAME"`, `"L1_CURRENT"`, …); `"CUSTOM"` for
+            /// [`AnyPayload::Other`] (runtime-registered) and `"UNKNOWN"`
+            /// for [`AnyPayload::Unknown`].
             #[must_use]
             pub fn name(&self) -> &'static str {
                 match self {
@@ -93,6 +108,7 @@ macro_rules! declare_payloads {
                         Self::$variant(_) =>
                             <$($path)::+ as crate::traits::PayloadDef>::NAME,
                     )+
+                    Self::Other { .. } => "CUSTOM",
                     Self::Unknown { .. } => "UNKNOWN",
                 }
             }
@@ -161,6 +177,39 @@ declare_payloads! {'a;
     FefSubpart           = 0x33 => crate::payload::fef_subpart::FefSubPartPayload<'a>,
 }
 
+impl<'a> AnyPayload<'a> {
+    /// Parse one payload by its `packet_type`, preferring the registry's custom
+    /// parsers over the built-in dispatch.
+    ///
+    /// `payload_bytes` must be the **payload-only slice** (bytes after the
+    /// 6-byte T2-MI header, before the 4-byte CRC trailer).
+    ///
+    /// # Precedence
+    ///
+    /// 1. If `registry` holds a custom parser for `packet_type`, it is called;
+    ///    the result becomes [`AnyPayload::Other`] (or an error on parse failure).
+    /// 2. Otherwise, falls back to the built-in [`AnyPayload::dispatch`].
+    /// 3. If neither route handles `packet_type`, returns `None` — the caller
+    ///    turns that into [`AnyPayload::Unknown`].
+    ///
+    /// See the [module-level documentation][self] for the dispatch contract
+    /// (payload-only bytes, header and CRC excluded).
+    pub fn dispatch_with(
+        registry: &crate::payload::registry::PayloadRegistry,
+        packet_type: u8,
+        payload_bytes: &'a [u8],
+    ) -> Option<crate::Result<Self>> {
+        if let Some(parse_fn) = registry.lookup(packet_type) {
+            return Some(match parse_fn(payload_bytes) {
+                Ok(value) => Ok(Self::Other { packet_type, value }),
+                Err(e) => Err(e),
+            });
+        }
+        // Fall back to built-in dispatch
+        Self::dispatch(packet_type, payload_bytes)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,6 +228,45 @@ mod tests {
             body: &[],
         };
         assert_eq!(unknown.name(), "UNKNOWN");
+
+        // A runtime-registered custom payload reports "CUSTOM".
+        use crate::payload::registry::PayloadRegistry;
+
+        // An unregistered packet_type yields no custom dispatch.
+        let empty = PayloadRegistry::new();
+        assert!(AnyPayload::dispatch_with(&empty, 0x40, &[]).is_none());
+
+        #[derive(Debug)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+        struct NameTestPayload {
+            _x: u8,
+        }
+
+        impl<'a> dvb_common::Parse<'a> for NameTestPayload {
+            type Error = crate::Error;
+            fn parse(bytes: &'a [u8]) -> crate::Result<Self> {
+                if bytes.is_empty() {
+                    return Err(crate::Error::BufferTooShort {
+                        need: 1,
+                        have: 0,
+                        what: "NameTest",
+                    });
+                }
+                Ok(Self { _x: bytes[0] })
+            }
+        }
+
+        impl<'a> crate::traits::PayloadDef<'a> for NameTestPayload {
+            const PACKET_TYPE: u8 = 0x41;
+            const NAME: &'static str = "NAME_TEST";
+        }
+
+        let mut reg = PayloadRegistry::new();
+        reg.register::<NameTestPayload>();
+        let parsed = AnyPayload::dispatch_with(&reg, 0x41, &[0xAA])
+            .unwrap()
+            .unwrap();
+        assert_eq!(parsed.name(), "CUSTOM");
     }
 
     /// Every entry in DISPATCHED_TYPES must dispatch to a non-Unknown variant.

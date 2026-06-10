@@ -12,6 +12,7 @@ pub mod individual_addressing;
 pub mod l1_current;
 pub mod l1_future;
 pub mod p2_bias;
+pub mod registry;
 pub mod timestamp;
 
 pub use any::AnyPayload;
@@ -29,4 +30,5 @@ pub use individual_addressing::{
 pub use l1_current::{FrequencySource, L1CurrentPayload};
 pub use l1_future::L1FuturePayload;
 pub use p2_bias::P2BiasPayload;
+pub use registry::{PayloadObject, PayloadRegistry};
 pub use timestamp::{Bandwidth, T2TimestampPayload};
