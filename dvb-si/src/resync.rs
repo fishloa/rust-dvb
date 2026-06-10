@@ -49,6 +49,7 @@ pub struct ResyncStats {
 #[derive(Debug, Default)]
 pub struct TsResync {
     buf: Vec<u8>,
+    head: usize,
     stride: Option<PacketStride>,
     stats: ResyncStats,
 }
@@ -71,17 +72,19 @@ impl TsResync {
         loop {
             match self.stride {
                 None => {
-                    if let Some((offset, s)) = find_sync(&self.buf) {
+                    if let Some((offset, s)) = find_sync(&self.buf[self.head..]) {
                         self.stats.dropped_bytes += offset as u64;
-                        self.buf.drain(..offset);
+                        self.head += offset;
                         self.stride = Some(s);
                     } else {
                         let keep = LOCK_CONFIRMATIONS * RS_PACKET_SIZE;
-                        if self.buf.len() > keep {
-                            let excess = self.buf.len() - keep;
+                        let tail_len = self.buf.len() - self.head;
+                        if tail_len > keep {
+                            let excess = tail_len - keep;
                             self.stats.dropped_bytes += excess as u64;
-                            self.buf.drain(..excess);
+                            self.head += excess;
                         }
+                        self.compact();
                         return emitted;
                     }
                 }
@@ -90,19 +93,21 @@ impl TsResync {
                         PacketStride::Ts188 => TS_PACKET_SIZE,
                         PacketStride::Rs204 => RS_PACKET_SIZE,
                     };
-                    if self.buf.len() < s {
+                    let tail_len = self.buf.len() - self.head;
+                    if tail_len < s {
+                        self.compact();
                         return emitted;
                     }
-                    if self.buf[0] == SYNC_BYTE {
+                    if self.buf[self.head] == SYNC_BYTE {
                         let mut packet = [0u8; TS_PACKET_SIZE];
-                        packet.copy_from_slice(&self.buf[..TS_PACKET_SIZE]);
+                        packet.copy_from_slice(&self.buf[self.head..self.head + TS_PACKET_SIZE]);
                         emitted.push(packet);
-                        self.buf.drain(..s);
+                        self.head += s;
                         self.stats.packets += 1;
                     } else {
                         self.stats.resyncs += 1;
                         self.stats.dropped_bytes += 1;
-                        self.buf.drain(..1);
+                        self.head += 1;
                         self.stride = None;
                     }
                 }
@@ -118,6 +123,13 @@ impl TsResync {
     /// Accumulated statistics.
     pub fn stats(&self) -> ResyncStats {
         self.stats
+    }
+
+    fn compact(&mut self) {
+        if self.head > 0 {
+            self.buf.drain(..self.head);
+            self.head = 0;
+        }
     }
 }
 
@@ -338,5 +350,41 @@ mod tests {
         assert_eq!(s.packets, 6);
         assert_eq!(s.resyncs, 0);
         assert_eq!(s.dropped_bytes, 0);
+    }
+
+    // ------------------------------------------------------------------
+    // Test 6 — large single-feed O(n) exercise (not O(n²))
+    // ------------------------------------------------------------------
+    #[test]
+    fn large_buffer_single_feed() {
+        const NUM_PACKETS: usize = 500;
+        let pkts: Vec<_> = (0..NUM_PACKETS)
+            .map(|i| {
+                let mut tag = (i % 253 + 1) as u8;
+                if tag >= SYNC_BYTE {
+                    tag += 1;
+                }
+                ts_packet(tag)
+            })
+            .collect();
+        let stream = concat_ts(&pkts);
+
+        // Prepend some garbage so the resync path is exercised.
+        let garbage: Vec<u8> = vec![0x00; 13];
+        let mut data = garbage;
+        data.extend_from_slice(&stream);
+
+        let mut r = TsResync::new();
+        let emitted = r.feed(&data);
+
+        assert_eq!(emitted.len(), NUM_PACKETS);
+        for (i, (e, p)) in emitted.iter().zip(pkts.iter()).enumerate() {
+            assert_eq!(e, p, "packet {i} mismatch");
+        }
+        assert_eq!(r.stride(), Some(PacketStride::Ts188));
+        let s = r.stats();
+        assert_eq!(s.packets, NUM_PACKETS as u64);
+        assert_eq!(s.resyncs, 0);
+        assert_eq!(s.dropped_bytes, 13);
     }
 }
