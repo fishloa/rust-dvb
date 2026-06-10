@@ -185,7 +185,6 @@ impl<'a> TsPacket<'a> {
 #[derive(Default)]
 pub struct SectionReassembler {
     buf: bytes::BytesMut,
-    expected: usize,
     ready: std::collections::VecDeque<bytes::Bytes>,
 }
 
@@ -203,7 +202,6 @@ impl SectionReassembler {
             // malformed but constructible — drop sync rather than panic.
             if payload.is_empty() {
                 self.buf.clear();
-                self.expected = 0;
                 return;
             }
             let pointer = payload[0] as usize;
@@ -220,7 +218,6 @@ impl SectionReassembler {
                 let tail_len = pointer.min(avail);
                 if self.buf.len() + tail_len > MAX_SECTION_SIZE {
                     self.buf.clear();
-                    self.expected = 0;
                 } else {
                     self.buf.extend_from_slice(&payload[1..1 + tail_len]);
                     self.drain_complete_sections();
@@ -230,7 +227,6 @@ impl SectionReassembler {
             // New sections start at `1 + pointer`; anything still buffered is
             // an incomplete (corrupt / lost-packet) section — discard it.
             self.buf.clear();
-            self.expected = 0;
 
             let start = 1 + pointer;
             if start >= payload.len() {
@@ -248,7 +244,6 @@ impl SectionReassembler {
             }
             if self.buf.len() + payload.len() > MAX_SECTION_SIZE {
                 self.buf.clear();
-                self.expected = 0;
                 return;
             }
             self.buf.extend_from_slice(payload);
@@ -263,21 +258,20 @@ impl SectionReassembler {
     /// the `pointer_field` (legal per ETSI EN 300 468 §5.1.4 and common on
     /// EMM PIDs, which pack several short messages into one payload). We must
     /// keep extracting until the buffer holds only a partial (multi-packet
-    /// spanning) section, which is stashed as `expected` for the next
-    /// continuation. A `0xFF` where a `table_id` is expected marks the rest of
+    /// spanning) section, whose bytes stay buffered for the next packet to
+    /// continue (the expected length is recomputed from the section header on
+    /// each drain). A `0xFF` where a `table_id` is expected marks the rest of
     /// the payload as stuffing.
     fn drain_complete_sections(&mut self) {
         loop {
             if self.buf.len() < 3 {
                 // Not enough for a section header yet; keep the partial bytes
                 // and wait for the next packet to complete the header.
-                self.expected = 0;
                 break;
             }
             if self.buf[0] == 0xFF {
                 // Stuffing where a table_id is expected — payload tail is fill.
                 self.buf.clear();
-                self.expected = 0;
                 break;
             }
             let exp = 3 + (((self.buf[1] & 0x0F) as usize) << 8 | self.buf[2] as usize);
@@ -286,10 +280,8 @@ impl SectionReassembler {
                 // leaving the remainder in self.buf — cheap (shifts pointers).
                 let section = self.buf.split_to(exp).freeze();
                 self.ready.push_back(section);
-                self.expected = 0;
             } else {
                 // Partial section spanning into later packets.
-                self.expected = exp;
                 break;
             }
         }
