@@ -29,10 +29,11 @@ pub const PID: u16 = 0x0012;
 
 const MIN_HEADER_LEN: usize = 3;
 const EXTENSION_HEADER_LEN: usize = 5;
-/// transport_stream_id(2) + original_network_id(2) + segment_last_section_number(1)
+/// Bytes after the extension header: transport_stream_id(2) + original_network_id(2) + segment_last_section_number(1)
 /// + last_table_id(1) = 6 bytes between the section header and the first event.
 const POST_EXTENSION_LEN: usize = 6;
 const CRC_LEN: usize = 4;
+const MIN_SECTION_LEN: usize = MIN_HEADER_LEN + EXTENSION_HEADER_LEN + POST_EXTENSION_LEN + CRC_LEN;
 const EVENT_HEADER_LEN: usize = 12;
 
 /// EIT variant distinguished by table_id range.
@@ -144,10 +145,10 @@ impl<'a> Parse<'a> for EitSection<'a> {
 
         let section_length = ((bytes[1] & 0x0F) as u16) << 8 | bytes[2] as u16;
         let total = MIN_HEADER_LEN + section_length as usize;
-        if bytes.len() < total {
+        if bytes.len() < total || total < MIN_SECTION_LEN {
             return Err(Error::SectionLengthOverflow {
                 declared: section_length as usize,
-                available: bytes.len() - MIN_HEADER_LEN,
+                available: bytes.len().saturating_sub(MIN_HEADER_LEN),
             });
         }
 
@@ -186,7 +187,7 @@ impl<'a> Parse<'a> for EitSection<'a> {
             if desc_end > events_end {
                 return Err(Error::SectionLengthOverflow {
                     declared: descriptors_loop_length,
-                    available: events_end - desc_start,
+                    available: events_end.saturating_sub(desc_start),
                 });
             }
             events.push(EitEvent {
@@ -632,5 +633,20 @@ mod tests {
         assert!(!eit.events[0].free_ca_mode);
         // 12-bit descriptor loop length decoded correctly: 2 bytes of desc.
         assert_eq!(eit.events[0].descriptors.raw(), &desc[..]);
+    }
+
+    #[test]
+    fn parse_rejects_zero_section_length() {
+        let mut buf = vec![0u8; 64];
+        buf[0] = TABLE_ID_PF_ACTUAL;
+        buf[1] = 0xF0;
+        buf[2] = 0x00;
+        for b in &mut buf[3..] {
+            *b = 0xFF;
+        }
+        assert!(matches!(
+            EitSection::parse(&buf).unwrap_err(),
+            Error::SectionLengthOverflow { .. }
+        ));
     }
 }

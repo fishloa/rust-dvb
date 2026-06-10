@@ -315,7 +315,7 @@ impl<'a> AnyTableSection<'a> {
             have: 0,
             what: "section table_id",
         })?;
-        if let Some(parse_fn) = registry.custom.get(&table_id) {
+        if let Some(parse_fn) = registry.lookup(table_id) {
             let value = parse_fn(bytes)?;
             return Ok(Self::Other { table_id, value });
         }

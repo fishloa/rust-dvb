@@ -373,7 +373,7 @@ impl<'a> Table<'a> for RntSection<'a> {
 
 impl<'a> crate::traits::TableDef<'a> for RntSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
-    const NAME: &'static str = "RELATED_AND_NEIGHBOURING";
+    const NAME: &'static str = "RESOLUTION_PROVIDER_NOTIFICATION";
 }
 
 #[cfg(test)]

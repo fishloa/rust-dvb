@@ -156,9 +156,13 @@ impl Serialize for VvcSubpicturesDescriptor<'_> {
 mod tests {
     use super::*;
     use crate::descriptors::extension::test_support::*;
-    use crate::descriptors::extension::{ExtensionBody, ExtensionDescriptor, ExtensionTag};
+    #[cfg(feature = "serde")]
+    use crate::descriptors::extension::ExtensionTag;
+    use crate::descriptors::extension::{ExtensionBody, ExtensionDescriptor};
+    #[cfg(feature = "serde")]
     use crate::text::DvbText;
 
+    #[cfg(feature = "serde")]
     #[test]
     fn parse_vvc_subpictures_with_description_round_trip() {
         // Table 162a: default_service_mode=true, 2 subpictures,

@@ -255,6 +255,7 @@ mod tests {
         assert_eq!(<RstSection as Table>::PID, 0x0013);
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn serde_json_serializes_fields() {
         // Serialize-only: assert the emitted JSON re-parses (serialize-stable).

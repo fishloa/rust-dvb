@@ -398,6 +398,7 @@ fn sit_serializes_to_valid_json() {
 fn sat_serializes_to_valid_json() {
     let sat = SatSection {
         satellite_table_id: 0,
+        private_indicator: true,
         table_count: 0,
         version_number: 0,
         current_next_indicator: true,

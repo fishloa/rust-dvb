@@ -23,6 +23,7 @@ const EXTENSION_HEADER_LEN: usize = 5;
 /// 2 bytes of original_network_id + 1 reserved_future_use byte.
 const POST_EXTENSION_LEN: usize = 3;
 const CRC_LEN: usize = 4;
+const MIN_SECTION_LEN: usize = MIN_HEADER_LEN + EXTENSION_HEADER_LEN + POST_EXTENSION_LEN + CRC_LEN;
 const SERVICE_HEADER_LEN: usize = 5;
 
 /// SDT kind — distinguishes `0x42` (actual) from `0x46` (other).
@@ -103,10 +104,10 @@ impl<'a> Parse<'a> for SdtSection<'a> {
 
         let section_length = ((bytes[1] & 0x0F) as u16) << 8 | bytes[2] as u16;
         let total = MIN_HEADER_LEN + section_length as usize;
-        if bytes.len() < total {
+        if bytes.len() < total || total < MIN_SECTION_LEN {
             return Err(Error::SectionLengthOverflow {
                 declared: section_length as usize,
-                available: bytes.len() - MIN_HEADER_LEN,
+                available: bytes.len().saturating_sub(MIN_HEADER_LEN),
             });
         }
 
@@ -136,7 +137,7 @@ impl<'a> Parse<'a> for SdtSection<'a> {
             if desc_end > services_end {
                 return Err(Error::SectionLengthOverflow {
                     declared: descriptors_loop_length,
-                    available: services_end - desc_start,
+                    available: services_end.saturating_sub(desc_start),
                 });
             }
             services.push(SdtService {
@@ -406,5 +407,20 @@ mod tests {
         let bytes = build_sdt(SdtKind::Actual, 1, 0, 0x20, &[]);
         let sdt = SdtSection::parse(&bytes).unwrap();
         assert_eq!(sdt.services.len(), 0);
+    }
+
+    #[test]
+    fn parse_rejects_zero_section_length() {
+        let mut buf = vec![0u8; 64];
+        buf[0] = TABLE_ID_ACTUAL;
+        buf[1] = 0xF0;
+        buf[2] = 0x00;
+        for b in &mut buf[3..] {
+            *b = 0xFF;
+        }
+        assert!(matches!(
+            SdtSection::parse(&buf).unwrap_err(),
+            Error::SectionLengthOverflow { .. }
+        ));
     }
 }

@@ -21,6 +21,7 @@ pub const PID: u16 = 0x0001;
 const MIN_HEADER_LEN: usize = 3;
 const EXTENSION_HEADER_LEN: usize = 5;
 const CRC_LEN: usize = 4;
+const MIN_SECTION_LEN: usize = MIN_HEADER_LEN + EXTENSION_HEADER_LEN + CRC_LEN;
 
 /// One CA descriptor entry from the CAT, in owned form so it
 /// outlives the source section bytes.
@@ -109,10 +110,10 @@ impl<'a> Parse<'a> for CatSection<'a> {
 
         let section_length = (((bytes[1] & 0x0F) as u16) << 8) | bytes[2] as u16;
         let total = MIN_HEADER_LEN + section_length as usize;
-        if bytes.len() < total {
+        if bytes.len() < total || total < MIN_SECTION_LEN {
             return Err(Error::SectionLengthOverflow {
                 declared: section_length as usize,
-                available: bytes.len() - MIN_HEADER_LEN,
+                available: bytes.len().saturating_sub(MIN_HEADER_LEN),
             });
         }
 
@@ -315,6 +316,7 @@ mod tests {
     /// CAT borrows its descriptor loop (3.0): the loop serializes as the
     /// typed descriptor sequence and the struct is serialize-only. Verify the
     /// CA descriptor decodes inside the JSON.
+    #[cfg(feature = "serde")]
     #[test]
     fn serde_json_serializes_typed_loop() {
         let bytes = build_cat(1, &ca_descriptor(0x0500, 0x0050));
@@ -326,5 +328,20 @@ mod tests {
         assert_eq!(loop_.len(), 1);
         assert_eq!(loop_[0]["ca"]["ca_system_id"], 0x0500);
         assert_eq!(loop_[0]["ca"]["ca_pid"], 0x0050);
+    }
+
+    #[test]
+    fn parse_rejects_zero_section_length() {
+        let mut buf = vec![0u8; 64];
+        buf[0] = TABLE_ID;
+        buf[1] = 0xF0;
+        buf[2] = 0x00;
+        for b in &mut buf[3..] {
+            *b = 0xFF;
+        }
+        assert!(matches!(
+            CatSection::parse(&buf).unwrap_err(),
+            Error::SectionLengthOverflow { .. }
+        ));
     }
 }

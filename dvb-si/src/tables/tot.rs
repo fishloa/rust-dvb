@@ -23,6 +23,7 @@ const HEADER_LEN: usize = 3;
 const UTC_TIME_LEN: usize = 5;
 const DESC_LOOP_LEN_FIELD: usize = 2;
 const CRC_LEN: usize = 4;
+const MIN_SECTION_LEN: usize = HEADER_LEN + UTC_TIME_LEN + DESC_LOOP_LEN_FIELD + CRC_LEN;
 
 /// Time Offset Table.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,10 +84,10 @@ impl<'a> Parse<'a> for TotSection<'a> {
         }
         let section_length = ((bytes[1] & 0x0F) as u16) << 8 | bytes[2] as u16;
         let total = HEADER_LEN + section_length as usize;
-        if bytes.len() < total {
+        if bytes.len() < total || total < MIN_SECTION_LEN {
             return Err(Error::SectionLengthOverflow {
                 declared: section_length as usize,
-                available: bytes.len() - HEADER_LEN,
+                available: bytes.len().saturating_sub(HEADER_LEN),
             });
         }
         let utc_time_raw = [bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]];
@@ -97,7 +98,7 @@ impl<'a> Parse<'a> for TotSection<'a> {
         if d_end > total - CRC_LEN {
             return Err(Error::SectionLengthOverflow {
                 declared: dl,
-                available: total - CRC_LEN - d_start,
+                available: (total - CRC_LEN).saturating_sub(d_start),
             });
         }
         Ok(TotSection {
@@ -209,5 +210,20 @@ mod tests {
         assert_eq!(buf, bytes, "TOT byte-identity against hand-built input");
         let re = TotSection::parse(&buf).unwrap();
         assert_eq!(tot, re);
+    }
+
+    #[test]
+    fn parse_rejects_zero_section_length() {
+        let mut buf = vec![0u8; 64];
+        buf[0] = TABLE_ID;
+        buf[1] = 0xF0;
+        buf[2] = 0x00;
+        for b in &mut buf[3..] {
+            *b = 0xFF;
+        }
+        assert!(matches!(
+            TotSection::parse(&buf).unwrap_err(),
+            Error::SectionLengthOverflow { .. }
+        ));
     }
 }

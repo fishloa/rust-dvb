@@ -24,6 +24,7 @@ const POST_EXTENSION_LEN: usize = 2;
 const CRC_LEN: usize = 4;
 /// Per-transport-stream header: ts_id(2) + original_network_id(2) + reserved(4) + transport_descriptors_length(12) = 6 bytes.
 const TS_HEADER_LEN: usize = 6;
+const MIN_SECTION_LEN: usize = MIN_HEADER_LEN + EXTENSION_HEADER_LEN + POST_EXTENSION_LEN + CRC_LEN;
 
 /// One transport-stream entry inside the BAT transport_stream_loop.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,10 +108,10 @@ impl<'a> Parse<'a> for BatSection<'a> {
 
         let section_length = ((bytes[1] & 0x0F) as u16) << 8 | bytes[2] as u16;
         let total = MIN_HEADER_LEN + section_length as usize;
-        if bytes.len() < total {
+        if bytes.len() < total || total < MIN_SECTION_LEN {
             return Err(Error::SectionLengthOverflow {
                 declared: section_length as usize,
-                available: bytes.len() - MIN_HEADER_LEN,
+                available: bytes.len().saturating_sub(MIN_HEADER_LEN),
             });
         }
 
@@ -501,5 +502,20 @@ mod tests {
         let mut buf = vec![0u8; 2];
         let err = bat.serialize_into(&mut buf).unwrap_err();
         assert!(matches!(err, Error::OutputBufferTooSmall { .. }));
+    }
+
+    #[test]
+    fn parse_rejects_zero_section_length() {
+        let mut buf = vec![0u8; 64];
+        buf[0] = TABLE_ID;
+        buf[1] = 0xF0;
+        buf[2] = 0x00;
+        for b in &mut buf[3..] {
+            *b = 0xFF;
+        }
+        assert!(matches!(
+            BatSection::parse(&buf).unwrap_err(),
+            Error::SectionLengthOverflow { .. }
+        ));
     }
 }
