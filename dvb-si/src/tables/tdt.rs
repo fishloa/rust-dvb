@@ -150,6 +150,7 @@ mod tests {
         assert_eq!(tdt, re);
     }
 
+    #[cfg(feature = "chrono")]
     #[test]
     fn utc_time_decodes_to_chrono() {
         let tdt = TdtSection {

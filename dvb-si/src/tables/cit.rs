@@ -81,6 +81,37 @@ pub struct CitSection<'a> {
     pub crid_entries: Vec<CridEntry<'a>>,
 }
 
+impl<'a> CitSection<'a> {
+    /// Resolve a prepend string by its `prepend_string_index`.
+    ///
+    /// Returns `None` if `index` is out of range. The block is a sequence of
+    /// null-terminated fragments; index 0 is the first fragment, index 1 the
+    /// second, etc. The returned slice includes everything up to (but not
+    /// including) the terminating NUL byte; an empty slice means the index
+    /// points to an empty or immediately-terminated fragment.
+    pub fn prepend_string(&self, index: u8) -> Option<&'a [u8]> {
+        let mut remaining = self.prepend_strings;
+        let mut current: u8 = 0;
+        while !remaining.is_empty() {
+            let nul_pos = remaining
+                .iter()
+                .position(|&b| b == 0)
+                .unwrap_or(remaining.len());
+            let fragment = &remaining[..nul_pos];
+            if current == index {
+                return Some(fragment);
+            }
+            current += 1;
+            remaining = if nul_pos < remaining.len() {
+                &remaining[nul_pos + 1..]
+            } else {
+                &[]
+            };
+        }
+        None
+    }
+}
+
 fn crid_entry_serialized_len(e: &CridEntry) -> usize {
     CRID_ENTRY_FIXED_LEN + e.unique_string.len()
 }
@@ -461,5 +492,24 @@ mod tests {
         assert_eq!(cit.service_id, 0x1234);
         assert_eq!(cit.transport_stream_id, 0x0064);
         assert!(cit.crid_entries.is_empty());
+    }
+
+    #[test]
+    fn prepend_string_resolver() {
+        let cit = CitSection {
+            private_indicator: false,
+            service_id: 0x0001,
+            version_number: 0,
+            current_next_indicator: true,
+            section_number: 0,
+            last_section_number: 0,
+            transport_stream_id: 0x0001,
+            original_network_id: 0x0001,
+            prepend_strings: b"crid://example.com/\x00crid://other.com/\x00",
+            crid_entries: Vec::new(),
+        };
+        assert_eq!(cit.prepend_string(0), Some(&b"crid://example.com/"[..]));
+        assert_eq!(cit.prepend_string(1), Some(&b"crid://other.com/"[..]));
+        assert_eq!(cit.prepend_string(2), None);
     }
 }

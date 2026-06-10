@@ -20,6 +20,8 @@ const EXTENSION_HEADER_LEN: usize = 5;
 const PCR_PID_LEN: usize = 2;
 const PROG_INFO_LEN_BYTES: usize = 2;
 const CRC_LEN: usize = 4;
+const MIN_SECTION_LEN: usize =
+    MIN_HEADER_LEN + EXTENSION_HEADER_LEN + PCR_PID_LEN + PROG_INFO_LEN_BYTES + CRC_LEN;
 const STREAM_HEADER_LEN: usize = 5;
 
 /// One elementary stream entry in the PMT's ES loop.
@@ -80,10 +82,10 @@ impl<'a> Parse<'a> for PmtSection<'a> {
 
         let section_length = ((bytes[1] & 0x0F) as u16) << 8 | bytes[2] as u16;
         let total = MIN_HEADER_LEN + section_length as usize;
-        if bytes.len() < total {
+        if bytes.len() < total || total < MIN_SECTION_LEN {
             return Err(Error::SectionLengthOverflow {
                 declared: section_length as usize,
-                available: bytes.len() - MIN_HEADER_LEN,
+                available: bytes.len().saturating_sub(MIN_HEADER_LEN),
             });
         }
 
@@ -101,7 +103,7 @@ impl<'a> Parse<'a> for PmtSection<'a> {
         if prog_info_end > stream_loop_end {
             return Err(Error::SectionLengthOverflow {
                 declared: program_info_length,
-                available: stream_loop_end - prog_info_start,
+                available: stream_loop_end.saturating_sub(prog_info_start),
             });
         }
         let program_info = DescriptorLoop::new(&bytes[prog_info_start..prog_info_end]);
@@ -118,7 +120,7 @@ impl<'a> Parse<'a> for PmtSection<'a> {
             if es_end > stream_loop_end {
                 return Err(Error::SectionLengthOverflow {
                     declared: es_info_length,
-                    available: stream_loop_end - es_start,
+                    available: stream_loop_end.saturating_sub(es_start),
                 });
             }
             streams.push(PmtStream {
@@ -374,5 +376,20 @@ mod tests {
         let bytes = build_pmt(1, 0, 0x100, &pi, &[]);
         let pmt = PmtSection::parse(&bytes).unwrap();
         assert_eq!(pmt.program_info.raw(), &pi[..]);
+    }
+
+    #[test]
+    fn parse_rejects_zero_section_length() {
+        let mut buf = vec![0u8; 64];
+        buf[0] = TABLE_ID;
+        buf[1] = 0xF0;
+        buf[2] = 0x00;
+        for b in &mut buf[3..] {
+            *b = 0xFF;
+        }
+        assert!(matches!(
+            PmtSection::parse(&buf).unwrap_err(),
+            Error::SectionLengthOverflow { .. }
+        ));
     }
 }

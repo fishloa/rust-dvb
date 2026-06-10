@@ -19,6 +19,8 @@ const COMMON_DESC_LEN_BYTES: usize = 2;
 const APP_LOOP_LEN_BYTES: usize = 2;
 const CRC_LEN: usize = 4;
 const APP_HEADER_LEN: usize = 9;
+const MIN_SECTION_LEN: usize =
+    MIN_HEADER_LEN + EXTENSION_HEADER_LEN + COMMON_DESC_LEN_BYTES + APP_LOOP_LEN_BYTES + CRC_LEN;
 
 /// 48-bit application identifier: organisation_id + application_id.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,10 +98,10 @@ impl<'a> Parse<'a> for AitSection<'a> {
 
         let section_length = ((bytes[1] & 0x0F) as u16) << 8 | bytes[2] as u16;
         let total = MIN_HEADER_LEN + section_length as usize;
-        if bytes.len() < total {
+        if bytes.len() < total || total < MIN_SECTION_LEN {
             return Err(Error::SectionLengthOverflow {
                 declared: section_length as usize,
-                available: bytes.len() - MIN_HEADER_LEN,
+                available: bytes.len().saturating_sub(MIN_HEADER_LEN),
             });
         }
 
@@ -117,7 +119,7 @@ impl<'a> Parse<'a> for AitSection<'a> {
         if common_desc_end > app_loop_end {
             return Err(Error::SectionLengthOverflow {
                 declared: common_descriptors_length,
-                available: app_loop_end - common_desc_start,
+                available: app_loop_end.saturating_sub(common_desc_start),
             });
         }
         let common_descriptors = DescriptorLoop::new(&bytes[common_desc_start..common_desc_end]);
@@ -129,7 +131,7 @@ impl<'a> Parse<'a> for AitSection<'a> {
         if app_loop_actual_end > app_loop_end {
             return Err(Error::SectionLengthOverflow {
                 declared: app_loop_length,
-                available: app_loop_end - app_loop_start,
+                available: app_loop_end.saturating_sub(app_loop_start),
             });
         }
 
@@ -149,7 +151,7 @@ impl<'a> Parse<'a> for AitSection<'a> {
             if app_desc_end > app_loop_actual_end {
                 return Err(Error::SectionLengthOverflow {
                     declared: app_desc_length,
-                    available: app_loop_actual_end - app_desc_start,
+                    available: app_loop_actual_end.saturating_sub(app_desc_start),
                 });
             }
             applications.push(AitApplication {
@@ -449,5 +451,20 @@ mod tests {
         ait.serialize_into(&mut buf).unwrap();
         let reparsed = AitSection::parse(&buf).unwrap();
         assert_eq!(ait, reparsed);
+    }
+
+    #[test]
+    fn parse_rejects_zero_section_length() {
+        let mut buf = vec![0u8; 64];
+        buf[0] = TABLE_ID;
+        buf[1] = 0xF0;
+        buf[2] = 0x00;
+        for b in &mut buf[3..] {
+            *b = 0xFF;
+        }
+        assert!(matches!(
+            AitSection::parse(&buf).unwrap_err(),
+            Error::SectionLengthOverflow { .. }
+        ));
     }
 }

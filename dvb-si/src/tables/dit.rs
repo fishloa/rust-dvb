@@ -184,6 +184,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn serde_json_serializes_fields() {
         // Serialize-only: assert the emitted JSON carries the field.

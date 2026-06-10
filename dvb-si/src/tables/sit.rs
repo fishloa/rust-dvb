@@ -29,6 +29,8 @@ const CRC_LEN: usize = 4;
 const SERVICE_HEADER_LEN: usize = 4;
 /// Maximum value of the 12-bit service_descriptors_length field.
 const MAX_SERVICE_DESC_LEN: usize = 0x0FFF;
+const MIN_SECTION_LEN: usize =
+    MIN_HEADER_LEN + EXTENSION_HEADER_LEN + DESC_LOOP_LEN_FIELD + CRC_LEN;
 
 /// One service entry in the SIT service loop (§7.1.2, Table 164).
 ///
@@ -91,10 +93,10 @@ impl<'a> Parse<'a> for SitSection<'a> {
         }
         let section_length = ((bytes[1] & 0x0F) as usize) << 8 | bytes[2] as usize;
         let total = MIN_HEADER_LEN + section_length;
-        if bytes.len() < total {
+        if bytes.len() < total || total < MIN_SECTION_LEN {
             return Err(Error::SectionLengthOverflow {
                 declared: section_length,
-                available: bytes.len() - MIN_HEADER_LEN,
+                available: bytes.len().saturating_sub(MIN_HEADER_LEN),
             });
         }
 
@@ -137,7 +139,7 @@ impl<'a> Parse<'a> for SitSection<'a> {
             if desc_end > crc_start {
                 return Err(Error::SectionLengthOverflow {
                     declared: svc_desc_len,
-                    available: crc_start - desc_start,
+                    available: crc_start.saturating_sub(desc_start),
                 });
             }
             services.push(SitService {
@@ -424,6 +426,21 @@ mod tests {
     fn table_trait_constants() {
         assert_eq!(<SitSection<'_> as Table>::TABLE_ID, 0x7F);
         assert_eq!(<SitSection<'_> as Table>::PID, 0x001F);
+    }
+
+    #[test]
+    fn parse_rejects_zero_section_length() {
+        let mut buf = vec![0u8; 64];
+        buf[0] = TABLE_ID;
+        buf[1] = 0xF0;
+        buf[2] = 0x00;
+        for b in &mut buf[3..] {
+            *b = 0xFF;
+        }
+        assert!(matches!(
+            SitSection::parse(&buf).unwrap_err(),
+            Error::SectionLengthOverflow { .. }
+        ));
     }
 
     #[cfg(feature = "serde")]

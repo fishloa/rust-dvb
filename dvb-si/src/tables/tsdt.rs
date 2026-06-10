@@ -16,6 +16,7 @@ pub const PID: u16 = 0x0002;
 const MIN_HEADER_LEN: usize = 3;
 const EXTENSION_HEADER_LEN: usize = 5;
 const CRC_LEN: usize = 4;
+const MIN_SECTION_LEN: usize = MIN_HEADER_LEN + EXTENSION_HEADER_LEN + CRC_LEN;
 
 /// Transport Stream Description Table.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,10 +61,10 @@ impl<'a> Parse<'a> for TsdtSection<'a> {
 
         let section_length = ((bytes[1] & 0x0F) as u16) << 8 | bytes[2] as u16;
         let total = MIN_HEADER_LEN + section_length as usize;
-        if bytes.len() < total {
+        if bytes.len() < total || total < MIN_SECTION_LEN {
             return Err(Error::SectionLengthOverflow {
                 declared: section_length as usize,
-                available: bytes.len() - MIN_HEADER_LEN,
+                available: bytes.len().saturating_sub(MIN_HEADER_LEN),
             });
         }
 
@@ -233,5 +234,20 @@ mod tests {
             v["descriptors"].is_array(),
             "descriptors must serialize as a typed sequence, got {v}"
         );
+    }
+
+    #[test]
+    fn parse_rejects_zero_section_length() {
+        let mut buf = vec![0u8; 64];
+        buf[0] = TABLE_ID;
+        buf[1] = 0xF0;
+        buf[2] = 0x00;
+        for b in &mut buf[3..] {
+            *b = 0xFF;
+        }
+        assert!(matches!(
+            TsdtSection::parse(&buf).unwrap_err(),
+            Error::SectionLengthOverflow { .. }
+        ));
     }
 }

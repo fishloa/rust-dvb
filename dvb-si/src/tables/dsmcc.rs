@@ -23,6 +23,7 @@ pub const PID: u16 = 0x0000;
 const MIN_HEADER_LEN: usize = 3;
 const EXTENSION_HEADER_LEN: usize = 5;
 const CRC_LEN: usize = 4;
+const MIN_SECTION_LEN: usize = MIN_HEADER_LEN + EXTENSION_HEADER_LEN + CRC_LEN;
 
 /// A DSM-CC section — minimal wrapper that validates header framing
 /// and carries the raw payload.
@@ -69,10 +70,10 @@ impl<'a> Parse<'a> for DsmccSection<'a> {
 
         let section_length = ((bytes[1] & 0x0F) as u16) << 8 | bytes[2] as u16;
         let total = MIN_HEADER_LEN + section_length as usize;
-        if bytes.len() < total {
+        if bytes.len() < total || total < MIN_SECTION_LEN {
             return Err(Error::SectionLengthOverflow {
                 declared: section_length as usize,
-                available: bytes.len() - MIN_HEADER_LEN,
+                available: bytes.len().saturating_sub(MIN_HEADER_LEN),
             });
         }
 
@@ -265,5 +266,20 @@ mod tests {
         sec.serialize_into(&mut buf).unwrap();
         let reparsed = DsmccSection::parse(&buf).unwrap();
         assert_eq!(sec, reparsed);
+    }
+
+    #[test]
+    fn parse_rejects_zero_section_length() {
+        let mut buf = vec![0u8; 64];
+        buf[0] = TABLE_ID_FIRST;
+        buf[1] = 0xF0;
+        buf[2] = 0x00;
+        for b in &mut buf[3..] {
+            *b = 0xFF;
+        }
+        assert!(matches!(
+            DsmccSection::parse(&buf).unwrap_err(),
+            Error::SectionLengthOverflow { .. }
+        ));
     }
 }

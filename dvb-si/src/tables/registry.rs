@@ -184,7 +184,7 @@ pub(crate) type CustomParse =
 /// 3. Unknown → [`crate::tables::AnyTableSection::Unknown`]
 #[derive(Default)]
 pub struct TableRegistry {
-    pub(crate) custom: HashMap<u8, CustomParse>,
+    custom: HashMap<u8, CustomParse>,
 }
 
 impl TableRegistry {
@@ -192,6 +192,12 @@ impl TableRegistry {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Look up a custom parser for the given `table_id`.
+    #[must_use]
+    pub(crate) fn lookup(&self, table_id: u8) -> Option<&CustomParse> {
+        self.custom.get(&table_id)
     }
 
     /// Register an owned custom table-section type for every table_id in its
@@ -355,12 +361,12 @@ mod tests {
         let mut reg = TableRegistry::new();
         reg.register::<MultiRangeTable>();
 
-        assert!(reg.custom.contains_key(&MULTI_LO));
-        assert!(reg.custom.contains_key(&MULTI_MID));
-        assert!(reg.custom.contains_key(&(MULTI_MID + 1)));
-        assert!(reg.custom.contains_key(&MULTI_HI));
+        assert!(reg.lookup(MULTI_LO).is_some());
+        assert!(reg.lookup(MULTI_MID).is_some());
+        assert!(reg.lookup(MULTI_MID + 1).is_some());
+        assert!(reg.lookup(MULTI_HI).is_some());
         // 0x91 is NOT in any range
-        assert!(!reg.custom.contains_key(&(MULTI_LO + 1)));
+        assert!(reg.lookup(MULTI_LO + 1).is_none());
 
         // Each registered id dispatches to Other
         for id in [MULTI_LO, MULTI_MID, MULTI_MID + 1, MULTI_HI] {

@@ -10,7 +10,7 @@
 
 use crate::descriptors::DescriptorLoop;
 use crate::error::{Error, Result};
-use crate::text::LangCode;
+use crate::text::{DvbText, LangCode};
 use crate::traits::Table;
 use dvb_common::{Parse, Serialize};
 
@@ -59,8 +59,8 @@ const ICON_DESC_LEN_HI_MASK: u8 = 0x0F;
 pub struct LinkItem<'a> {
     /// ISO 639-2 language code.
     pub language_code: LangCode,
-    /// Promotional text bytes.
-    pub promotional_text: &'a [u8],
+    /// Promotional text (EN 300 468 Annex A).
+    pub promotional_text: DvbText<'a>,
 }
 
 fn link_item_serialized_len(item: &LinkItem) -> usize {
@@ -518,7 +518,7 @@ fn parse_link_info(data: &[u8], link_info_length: usize) -> Result<LinkInfo<'_>>
                 what: "RctSection promotional_text",
             });
         }
-        let promotional_text = &data[pos..pos + text_len];
+        let promotional_text = DvbText::new(&data[pos..pos + text_len]);
         pos += text_len;
         items.push(LinkItem {
             language_code,
@@ -588,7 +588,7 @@ fn serialize_link_info(li: &LinkInfo, buf: &mut [u8]) -> usize {
         buf[pos..pos + 3].copy_from_slice(&item.language_code.0);
         buf[pos + 3] = item.promotional_text.len() as u8;
         pos += 4;
-        buf[pos..pos + item.promotional_text.len()].copy_from_slice(item.promotional_text);
+        buf[pos..pos + item.promotional_text.len()].copy_from_slice(item.promotional_text.raw());
         pos += item.promotional_text.len();
     }
     let dll = li.descriptors.len() as u16;
@@ -868,7 +868,7 @@ mod tests {
             dvb_binary_locator: Some(loc),
             items: vec![LinkItem {
                 language_code: LangCode(*b"eng"),
-                promotional_text: b"Promo",
+                promotional_text: DvbText::new(b"Promo"),
             }],
             default_icon_flag: true,
             icon_id: 3,
