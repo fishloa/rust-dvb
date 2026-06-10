@@ -22,7 +22,7 @@
 //! `m6-single.ts` (1264 packets / 237 632 bytes):
 //!   PIDs: 0x0000 (PAT), 0x0064/0x0082–0x0084/0x008C (PMTs, from PAT-follow),
 //!         0x00AA (AIT), 0x00AB (DSM-CC carousel).
-//!   No SDT/NIT/EIT/TDT-TOT in this short clip.
+//! No SDT/NIT/EIT/TDT-TOT in this short clip.
 //!   Table set with explicit PID watch: {AitSection, DsmccSection, PatSection, PmtSection}.
 //!   Stats: emitted=6, sections_completed=50, crc_failures=0, malformed=0.
 //!
@@ -30,6 +30,7 @@
 //!   Standard SI PIDs present: 0x0010 (NIT), 0x0011 (SDT), 0x0012 (EIT).
 //!   Table set (default demux): {EitSection, NitSection, PatSection, PmtSection, SdtSection}.
 //!   Stats: emitted=237, sections_completed=484, crc_failures=0, malformed=0.
+#![cfg(feature = "ts")]
 
 use std::collections::BTreeSet;
 

@@ -205,6 +205,7 @@ impl SectionEvent {
 }
 
 /// Section statistics, monotonically accumulated across `feed` calls.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Stats {
     /// TS packets fed (every `feed` call increments this).

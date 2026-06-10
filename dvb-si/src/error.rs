@@ -52,15 +52,6 @@ pub enum Error {
         reason: &'static str,
     },
 
-    /// BCD-encoded value is out of valid range.
-    #[error("invalid BCD in {field}: bytes {bytes:02x?}")]
-    InvalidBcd {
-        /// Field name where the BCD sits.
-        field: &'static str,
-        /// The (up to 4) raw bytes inspected.
-        bytes: [u8; 4],
-    },
-
     /// A decoded value passed to a `set_*` accessor could not be encoded to the
     /// field's fixed wire representation (e.g. a duration ≥ 100 hours, or a date
     /// outside the 16-bit MJD range).

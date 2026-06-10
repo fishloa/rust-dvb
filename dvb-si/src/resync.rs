@@ -18,6 +18,7 @@ pub const RS_PACKET_SIZE: usize = 204;
 const LOCK_CONFIRMATIONS: usize = 5;
 
 /// Detected packet size after locking.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum PacketStride {
@@ -28,6 +29,7 @@ pub enum PacketStride {
 }
 
 /// Counters accumulated during resynchronisation.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct ResyncStats {

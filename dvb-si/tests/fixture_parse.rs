@@ -6,6 +6,7 @@
 //!
 //! NIT fixtures (table_id 0x40/0x41 on PID 0x0010):
 //! - `tests/fixtures/tnt-5w-12732v-isi6-10s.ts` — 2 NIT sections (primary fixture)
+#![cfg(feature = "ts")]
 
 use dvb_common::{Parse, Serialize};
 use dvb_si::tables::ait::AitSection;

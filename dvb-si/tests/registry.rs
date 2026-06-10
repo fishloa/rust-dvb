@@ -145,6 +145,7 @@ fn custom_registration_overrides_builtin() {
     #[derive(Debug)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize))]
     struct MyShortEventOverride {
+        #[allow(dead_code)]
         raw_len: u8,
     }
 

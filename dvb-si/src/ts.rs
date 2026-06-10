@@ -276,7 +276,9 @@ impl Pcr {
 
 /// Decoded adaptation field — flags plus PCR/OPCR and splice point per
 /// ISO/IEC 13818-1:2007 §2.4.3.4. Transport-private data and the
-/// adaptation-field extension are not surfaced.
+/// adaptation-field extension are not yet surfaced; more fields may be
+/// added in future releases.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct AdaptationField {
@@ -498,8 +500,7 @@ mod tests {
     fn parse_extracts_pid_and_continuity_counter() {
         // PID = 0x1234 → upper 5 bits = 0x12, lower 8 bits = 0x34
         // CC = 5 → 0x05
-        // b1 = 0x47 (sync=0, tei=0, pusi=0) | (0x12) = 0x47 & 0xE0 | 0x12 = 0x47 & 0xE0 = 0x40 | 0x12 = 0x52
-        // Actually: b1 bits: [tei:1][pusi:1][pid_hi:5]
+        // b1 bits: [tei:1][pusi:1][pid_hi:5]
         // pid_hi = 0x12 = 0b00100_10 → bits 5..=1 = 0x12
         // b1 = 0b00_010010 = 0x12 (no tei, no pusi)
         let pkt = make_packet(0x12, 0x34, 0x05, &[]);
@@ -717,7 +718,7 @@ mod tests {
         let mut reasm = SectionReassembler::default();
         reasm.feed(&payload_a, true);
         // Packet B: pointer = 23 = all remaining bytes; no new section follows.
-        reasm.feed(&payload_b_pointer_only(tail), true);
+        reasm.feed(&build_pusi_payload_pointer_spanning_all(tail), true);
 
         let out = reasm.pop_section().expect("spanning section completes");
         assert_eq!(out.as_ref(), &spanning[..]);
@@ -726,7 +727,7 @@ mod tests {
 
     /// Build a PUSI payload whose `pointer_field` equals the whole tail (so the
     /// pointer spans to the end of the payload and no new section starts).
-    fn payload_b_pointer_only(tail: &[u8]) -> Vec<u8> {
+    fn build_pusi_payload_pointer_spanning_all(tail: &[u8]) -> Vec<u8> {
         let mut v = Vec::with_capacity(1 + tail.len());
         v.push(tail.len() as u8);
         v.extend_from_slice(tail);
@@ -813,8 +814,7 @@ mod tests {
         reasm.feed(&[], true);
         assert!(reasm.pop_section().is_none());
         // Recovers on the next clean PUSI.
-        let mut payload = vec![0x00u8, 0x72, 0x70, 0x01, 0x00];
-        payload.resize(5, 0);
+        let payload = vec![0x00u8, 0x72, 0x70, 0x01, 0x00];
         reasm.feed(&payload, true);
         assert!(reasm.pop_section().is_some());
     }
