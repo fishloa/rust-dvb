@@ -1,5 +1,9 @@
 # Changelog
 
+### Changed
+- Removed the dead write-only `expected` field from `SectionReassembler` and
+  corrected its doc comment (it never affected behaviour) (#46).
+
 ## Unreleased
 
 ### Added
