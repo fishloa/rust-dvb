@@ -31,6 +31,8 @@ jobs:
         run: cargo test --workspace --all-features --locked
       - name: Build (no default features)
         run: cargo build --workspace --no-default-features --locked
+      - name: Test (no default features)
+        run: cargo test --workspace --no-default-features --locked
 
   lint:
     name: clippy

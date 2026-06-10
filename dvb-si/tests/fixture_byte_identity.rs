@@ -3,6 +3,7 @@
 //!
 //! This enforces the CLAUDE.md invariant: parse → serialize → byte-identical
 //! on real broadcast data (reserved bits, SSI, CRC included).
+#![cfg(feature = "ts")]
 
 use dvb_common::Serialize;
 use dvb_si::demux::SiDemux;

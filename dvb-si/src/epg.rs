@@ -99,6 +99,59 @@ pub struct ServiceKey {
     pub service_id: u16,
 }
 
+/// A parental rating entry from a
+/// [`ParentalRatingDescriptor`](crate::descriptors::parental_rating::ParentalRatingDescriptor).
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+pub struct Rating {
+    /// Three-character ISO 3166 country code.
+    pub country: String,
+    /// Minimum recommended age.
+    pub value: u8,
+}
+
+/// A content reference identifier entry from a
+/// [`ContentIdentifierDescriptor`](crate::descriptors::content_identifier::ContentIdentifierDescriptor).
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+pub struct Crid {
+    /// CRID type (0x01 = series, 0x02 = programme, 0x03 = recommendation).
+    pub crid_type: u8,
+    /// The CRID locator string.
+    pub crid: String,
+}
+
+/// An item (description-value pair) from an extended event descriptor fragment.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+pub struct ExtendedItem {
+    /// Item description.
+    pub description: String,
+    /// Item value.
+    pub item: String,
+}
+
+/// A content genre nibble triplet from a
+/// [`ContentDescriptor`](crate::descriptors::content::ContentDescriptor).
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+pub struct ContentNibble {
+    /// Content nibble level 1 (category).
+    pub level_1: u8,
+    /// Content nibble level 2 (sub-category).
+    pub level_2: u8,
+    /// User-defined byte.
+    pub user: u8,
+}
+
 /// A decoded view of an EPG event.
 ///
 /// Extracted from [`crate::collect::CompleteEitEvent`] with commonly needed
@@ -110,6 +163,7 @@ pub struct ServiceKey {
 /// Only the first descriptor of each kind (short_event, content,
 /// parental_rating, content_identifier) is decoded per event; EIT events
 /// may carry multiple language variants and only the first is taken.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
@@ -139,19 +193,19 @@ pub struct EpgEvent {
     /// [`ExtendedEventDescriptor`](crate::descriptors::extended_event::ExtendedEventDescriptor)
     /// fragments, sorted by `descriptor_number`.
     #[cfg_attr(feature = "serde", serde(default))]
-    pub extended_items: Vec<(String, String)>,
-    /// Content genre entries (nibble_1, nibble_2, user_byte) from
+    pub extended_items: Vec<ExtendedItem>,
+    /// Content genre entries from
     /// [`ContentDescriptor`](crate::descriptors::content::ContentDescriptor).
     #[cfg_attr(feature = "serde", serde(default))]
-    pub content_nibbles: Vec<(u8, u8, u8)>,
-    /// Parental rating entries (country_code, rating) from
+    pub content_nibbles: Vec<ContentNibble>,
+    /// Parental rating entries from
     /// [`ParentalRatingDescriptor`](crate::descriptors::parental_rating::ParentalRatingDescriptor).
     #[cfg_attr(feature = "serde", serde(default))]
-    pub ratings: Vec<(String, u8)>,
-    /// CRID entries (crid_type, inline_crid) from
+    pub ratings: Vec<Rating>,
+    /// CRID entries from
     /// [`ContentIdentifierDescriptor`](crate::descriptors::content_identifier::ContentIdentifierDescriptor).
     #[cfg_attr(feature = "serde", serde(default))]
-    pub crids: Vec<(u8, String)>,
+    pub crids: Vec<Crid>,
 }
 
 /// Serialisable service data exposed by [`EpgStore`] serde export.
@@ -545,12 +599,12 @@ fn extract_short_event(
 struct ExtendedFragment {
     descriptor_number: u8,
     text: String,
-    items: Vec<(String, String)>,
+    items: Vec<ExtendedItem>,
 }
 
 fn extract_extended(
     descriptors: &[crate::Result<crate::descriptors::AnyDescriptor<'_>>],
-) -> (Option<String>, Vec<(String, String)>) {
+) -> (Option<String>, Vec<ExtendedItem>) {
     use crate::descriptors::AnyDescriptor;
 
     let mut fragments: Vec<ExtendedFragment> = descriptors
@@ -558,14 +612,12 @@ fn extract_extended(
         .filter_map(|d| {
             if let Ok(AnyDescriptor::ExtendedEvent(ee)) = d {
                 let text = ee.text.decode().into_owned();
-                let items: Vec<(String, String)> = ee
+                let items: Vec<ExtendedItem> = ee
                     .items
                     .iter()
-                    .map(|i| {
-                        (
-                            i.description.decode().into_owned(),
-                            i.value.decode().into_owned(),
-                        )
+                    .map(|i| ExtendedItem {
+                        description: i.description.decode().into_owned(),
+                        item: i.value.decode().into_owned(),
                     })
                     .collect();
                 if !text.is_empty() || !items.is_empty() {
@@ -592,8 +644,7 @@ fn extract_extended(
 
     let extended_text: String = fragments.iter().map(|f| f.text.as_str()).collect();
 
-    let extended_items: Vec<(String, String)> =
-        fragments.into_iter().flat_map(|f| f.items).collect();
+    let extended_items: Vec<ExtendedItem> = fragments.into_iter().flat_map(|f| f.items).collect();
 
     let text = if extended_text.is_empty() {
         None
@@ -606,13 +657,17 @@ fn extract_extended(
 
 fn extract_content(
     descriptors: &[crate::Result<crate::descriptors::AnyDescriptor<'_>>],
-) -> Vec<(u8, u8, u8)> {
+) -> Vec<ContentNibble> {
     for desc in descriptors {
         if let Ok(crate::descriptors::AnyDescriptor::Content(ct)) = desc {
             return ct
                 .entries
                 .iter()
-                .map(|e| (e.nibble_1, e.nibble_2, e.user_byte))
+                .map(|e| ContentNibble {
+                    level_1: e.nibble_1,
+                    level_2: e.nibble_2,
+                    user: e.user_byte,
+                })
                 .collect();
         }
     }
@@ -621,13 +676,16 @@ fn extract_content(
 
 fn extract_ratings(
     descriptors: &[crate::Result<crate::descriptors::AnyDescriptor<'_>>],
-) -> Vec<(String, u8)> {
+) -> Vec<Rating> {
     for desc in descriptors {
         if let Ok(crate::descriptors::AnyDescriptor::ParentalRating(pr)) = desc {
             return pr
                 .entries
                 .iter()
-                .map(|e| (e.country_code.as_str().into_owned(), e.rating))
+                .map(|e| Rating {
+                    country: e.country_code.as_str().into_owned(),
+                    value: e.rating,
+                })
                 .collect();
         }
     }
@@ -636,7 +694,7 @@ fn extract_ratings(
 
 fn extract_crids(
     descriptors: &[crate::Result<crate::descriptors::AnyDescriptor<'_>>],
-) -> Vec<(u8, String)> {
+) -> Vec<Crid> {
     use crate::descriptors::content_identifier::CridLocation;
     for desc in descriptors {
         if let Ok(crate::descriptors::AnyDescriptor::ContentIdentifier(ci)) = desc {
@@ -646,7 +704,10 @@ fn extract_crids(
                 .filter_map(|e| match e.location {
                     CridLocation::Inline(bytes) => {
                         let s = String::from_utf8_lossy(bytes).into_owned();
-                        Some((e.crid_type, s))
+                        Some(Crid {
+                            crid_type: e.crid_type,
+                            crid: s,
+                        })
                     }
                     _ => None,
                 })
@@ -813,36 +874,35 @@ mod tests {
         assert!(a < b);
     }
 
+    fn empty_event(
+        id: u16,
+        start: Option<chrono::DateTime<chrono::Utc>>,
+        dur: Option<core::time::Duration>,
+    ) -> EpgEvent {
+        EpgEvent {
+            event_id: id,
+            start_time: start,
+            duration: dur,
+            running_status: 0,
+            free_ca_mode: false,
+            event_name: None,
+            event_text: None,
+            extended_text: None,
+            extended_items: Vec::new(),
+            content_nibbles: Vec::new(),
+            ratings: Vec::new(),
+            crids: Vec::new(),
+        }
+    }
+
     #[test]
     fn events_sorts_valid_before_invalid() {
-        let valid = EpgEvent {
-            event_id: 1,
-            start_time: Some(Utc::now()),
-            duration: Some(core::time::Duration::from_secs(3600)),
-            running_status: 0,
-            free_ca_mode: false,
-            event_name: None,
-            event_text: None,
-            extended_text: None,
-            extended_items: Vec::new(),
-            content_nibbles: Vec::new(),
-            ratings: Vec::new(),
-            crids: Vec::new(),
-        };
-        let invalid = EpgEvent {
-            event_id: 2,
-            start_time: None,
-            duration: None,
-            running_status: 0,
-            free_ca_mode: false,
-            event_name: None,
-            event_text: None,
-            extended_text: None,
-            extended_items: Vec::new(),
-            content_nibbles: Vec::new(),
-            ratings: Vec::new(),
-            crids: Vec::new(),
-        };
+        let valid = empty_event(
+            1,
+            Some(Utc::now()),
+            Some(core::time::Duration::from_secs(3600)),
+        );
+        let invalid = empty_event(2, None, None);
 
         let mut events = [&invalid, &valid];
         events.sort_by(|a, b| match (a.start_time, b.start_time) {
@@ -931,9 +991,27 @@ mod tests {
         // Items accumulated in descriptor_number order: dn=0 ("Year"/"2026"),
         // dn=1 ("Genre"/"Thriller"), dn=2 ("Director"/"Alice"), dn=3 (none)
         assert_eq!(items.len(), 3);
-        assert_eq!(items[0], ("Year".to_string(), "2026".to_string()));
-        assert_eq!(items[1], ("Genre".to_string(), "Thriller".to_string()));
-        assert_eq!(items[2], ("Director".to_string(), "Alice".to_string()));
+        assert_eq!(
+            items[0],
+            ExtendedItem {
+                description: "Year".into(),
+                item: "2026".into()
+            }
+        );
+        assert_eq!(
+            items[1],
+            ExtendedItem {
+                description: "Genre".into(),
+                item: "Thriller".into()
+            }
+        );
+        assert_eq!(
+            items[2],
+            ExtendedItem {
+                description: "Director".into(),
+                item: "Alice".into()
+            }
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1026,6 +1104,28 @@ mod tests {
 
         let sec = core::time::Duration::from_secs(3600);
 
+        fn named_event(
+            id: u16,
+            start: chrono::DateTime<chrono::Utc>,
+            dur: core::time::Duration,
+            name: &str,
+        ) -> EpgEvent {
+            EpgEvent {
+                event_id: id,
+                start_time: Some(start),
+                duration: Some(dur),
+                running_status: 0,
+                free_ca_mode: false,
+                event_name: Some(name.into()),
+                event_text: None,
+                extended_text: None,
+                extended_items: vec![],
+                content_nibbles: vec![],
+                ratings: vec![],
+                crids: vec![],
+            }
+        }
+
         let mut store = EpgStore::new();
         let key = ServiceKey {
             original_network_id: 1,
@@ -1034,57 +1134,9 @@ mod tests {
         };
         let svc = store.cache.entry(key).or_default();
         // Insert out of order — 14:00 first, 12:00 second, 16:00 third
-        svc.events.insert(
-            3,
-            EpgEvent {
-                event_id: 3,
-                start_time: Some(t1400),
-                duration: Some(sec),
-                running_status: 0,
-                free_ca_mode: false,
-                event_name: Some("Event 14".into()),
-                event_text: None,
-                extended_text: None,
-                extended_items: vec![],
-                content_nibbles: vec![],
-                ratings: vec![],
-                crids: vec![],
-            },
-        );
-        svc.events.insert(
-            1,
-            EpgEvent {
-                event_id: 1,
-                start_time: Some(t1200),
-                duration: Some(sec),
-                running_status: 0,
-                free_ca_mode: false,
-                event_name: Some("Event 12".into()),
-                event_text: None,
-                extended_text: None,
-                extended_items: vec![],
-                content_nibbles: vec![],
-                ratings: vec![],
-                crids: vec![],
-            },
-        );
-        svc.events.insert(
-            2,
-            EpgEvent {
-                event_id: 2,
-                start_time: Some(t1600),
-                duration: Some(sec),
-                running_status: 0,
-                free_ca_mode: false,
-                event_name: Some("Event 16".into()),
-                event_text: None,
-                extended_text: None,
-                extended_items: vec![],
-                content_nibbles: vec![],
-                ratings: vec![],
-                crids: vec![],
-            },
-        );
+        svc.events.insert(3, named_event(3, t1400, sec, "Event 14"));
+        svc.events.insert(1, named_event(1, t1200, sec, "Event 12"));
+        svc.events.insert(2, named_event(2, t1600, sec, "Event 16"));
 
         // "next" at 10:00 must be the earliest future — event 1 at 12:00
         let (_now, next) = store.now_and_next(key, t1000);
@@ -1323,7 +1375,11 @@ mod tests {
                 event_text: Some("Today's headlines".into()),
                 extended_text: None,
                 extended_items: vec![],
-                content_nibbles: vec![(1, 1, 0)],
+                content_nibbles: vec![ContentNibble {
+                    level_1: 1,
+                    level_2: 1,
+                    user: 0,
+                }],
                 ratings: vec![],
                 crids: vec![],
             },
@@ -1336,7 +1392,7 @@ mod tests {
         assert_eq!(svc_data["events"][0]["eventName"], "The News");
         assert_eq!(
             svc_data["events"][0]["contentNibbles"][0],
-            serde_json::json!([1, 1, 0])
+            serde_json::json!({"level1": 1, "level2": 1, "user": 0})
         );
     }
 }

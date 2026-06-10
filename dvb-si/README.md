@@ -297,8 +297,10 @@ You rarely match table_ids or descriptor_tags by hand. `AnyTableSection::parse`
 dispatches a complete section to the right typed section parser; a section's descriptor-loop
 field is a `DescriptorLoop` whose `.iter()` yields `AnyDescriptor` values (typed
 where known, `Unknown` otherwise, never panicking — `parse_loop` does the same
-for a free byte slice); and `DescriptorRegistry` lets you plug in private
-descriptors at runtime. All are generated from a single declarative list so the
+for a free byte slice). `DescriptorRegistry` lets you plug in private
+descriptors at runtime, `TableRegistry` does the same for private table_ids,
+and `ExtensionRegistry` handles private tag-extension sub-descriptors (tag 0x7F).
+All are generated from a single declarative list so the
 dispatcher can never drift from the implemented set.
 
 ```rust

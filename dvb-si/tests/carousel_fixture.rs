@@ -6,6 +6,7 @@
 //! broadcast bytes: DSM-CC section framing → typed DSI/DII/DDB messages →
 //! cross-message invariants (downloadId linkage, DVB transactionId rules,
 //! DII geometry vs DDB block sizes).
+#![cfg(feature = "ts")]
 
 use dvb_common::{Parse, Serialize};
 use dvb_si::carousel::{DownloadDataBlock, ModuleReassembler, UnMessage};
