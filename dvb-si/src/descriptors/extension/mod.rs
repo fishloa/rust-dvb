@@ -296,7 +296,7 @@ declare_extension_bodies! {'a;
     /// coordinate_system Table 147, §6.4.8).
     ImageIcon = 0x00 => ImageIcon<'a>,
     /// `0x04` — T2_delivery_system (Table 133, §6.4.6.3).
-    T2DeliverySystem = 0x04 => T2DeliverySystem<'a>,
+    T2DeliverySystem = 0x04 => T2DeliverySystem,
     /// `0x05` — SH_delivery_system (Table 119, §6.4.6.2).
     ShDeliverySystem = 0x05 => ShDeliverySystem,
     /// `0x06` — supplementary_audio (Table 153, §6.4.11).
