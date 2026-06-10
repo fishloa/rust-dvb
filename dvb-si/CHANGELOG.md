@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **T2-MI extension descriptor (`descriptor_tag_extension` 0x11)** now typed as
+  `T2miDescriptor` (`t2mi_stream_id`, `num_t2mi_streams_minus_one`,
+  `pcr_iscr_common_clock_flag`, reserved tail) per EN 300 468 §6.4.14 Table 158;
+  previously fell through to `ExtensionBody::Raw` (#53).
+
 ## 4.3.0 — 2026-06-10
 
 Decoded accessors and analysis building blocks across the workspace; all
