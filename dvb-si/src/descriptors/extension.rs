@@ -38,6 +38,7 @@
 //! - `0x0A` target_region_name (Table 157, §6.4.13) — region loop raw.
 //! - `0x0B` service_relocated (Table 152, §6.4.10).
 //! - `0x0D` C2_delivery_system (Table 115, §6.4.6.1).
+//! - `0x11` T2MI (Table 158, §6.4.14).
 //! - `0x13` URI_linkage (Table 159, §6.4.16.1) — uri/private split typed.
 //! - `0x15` AC-4 (annex D syntax table, §D.5) — first level; toc/extra raw.
 //! - `0x16` C2_bundle_delivery_system (Table 139, §6.4.6.4) — full fixed loop.
@@ -54,7 +55,6 @@
 //! - `0x0C` XAIT_PID — deferred (TS 102 727 PDF vendored, no extracted syntax table yet).
 //! - `0x0E` DTS-HD / `0x0F` DTS_Neural / `0x21` DTS-UHD — spec not vendored (annex G/L).
 //! - `0x10` video_depth_range — niche (3D disparity); deferred.
-//! - `0x11` T2MI — niche (T2-MI encapsulation); deferred.
 //! - `0x14` CI_ancillary_data — spec not vendored (ETSI TS 103 205).
 //! - `0x18` protection_message — spec not vendored (ETSI TS 102 809).
 //! - `0x22` service_prominence / `0x23` vvc_subpictures / `0x24` S2Xv2 — niche; deferred.
@@ -87,6 +87,8 @@ const SERVICE_RELOCATED_LEN: usize = 6; // 3 × u16
 const S2X_PRIMARY_LEN: usize = 11;
 const S2X_SCRAMBLING_LEN: usize = 3;
 const TTML_FIXED_LEN: usize = ISO_639_LEN + 2; // ISO_639(3) + 2 packed bytes
+/// Minimum T2MI selector length (Table 158 §6.4.14): 3 fixed bytes before the reserved tail.
+const T2MI_MIN_LEN: usize = 3;
 
 /// Known `descriptor_tag_extension` values (EN 300 468 Table 109, §6.4.0).
 ///
@@ -116,6 +118,8 @@ pub enum ExtensionTag {
     ServiceRelocated = 0x0B,
     /// C2_delivery_system_descriptor.
     C2DeliverySystem = 0x0D,
+    /// T2-MI_descriptor (Table 158, §6.4.14).
+    T2mi = 0x11,
     /// URI_linkage_descriptor.
     UriLinkage = 0x13,
     /// AC-4_descriptor (annex D).
@@ -153,6 +157,8 @@ pub enum ExtensionBody<'a> {
     ServiceRelocated(ServiceRelocated),
     /// `0x0D` — C2_delivery_system (Table 115, §6.4.6.1).
     C2DeliverySystem(C2DeliverySystem),
+    /// `0x11` — T2-MI (Table 158, §6.4.14).
+    T2mi(T2miDescriptor<'a>),
     /// `0x13` — URI_linkage (Table 159, §6.4.16.1).
     UriLinkage(UriLinkage<'a>),
     /// `0x15` — AC-4 (annex D).
@@ -321,6 +327,24 @@ pub struct C2DeliverySystem {
     pub active_ofdm_symbol_duration: u8,
     /// guard_interval(3).
     pub guard_interval: u8,
+}
+
+// ===========================================================================
+//  Section 0x11 — T2MI_descriptor (Table 158, §6.4.14)
+// ===========================================================================
+/// T2MI body (Table 158) — fully typed, fixed 3-byte lead-in + reserved tail.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "yoke", derive(yoke::Yokeable))]
+pub struct T2miDescriptor<'a> {
+    /// t2mi_stream_id(3) — byte 0 low bits.
+    pub t2mi_stream_id: u8,
+    /// num_t2mi_streams_minus_one(3) — byte 1 low bits.
+    pub num_t2mi_streams_minus_one: u8,
+    /// pcr_iscr_common_clock_flag(1) — byte 2 low bit.
+    pub pcr_iscr_common_clock_flag: bool,
+    /// Trailing reserved_zero_future_use byte loop (Table 158 inner `for`).
+    pub reserved_tail: &'a [u8],
 }
 
 // ===========================================================================
@@ -520,6 +544,7 @@ impl ExtensionDescriptor<'_> {
             0x0A => ExtensionTag::TargetRegionName,
             0x0B => ExtensionTag::ServiceRelocated,
             0x0D => ExtensionTag::C2DeliverySystem,
+            0x11 => ExtensionTag::T2mi,
             0x13 => ExtensionTag::UriLinkage,
             0x15 => ExtensionTag::Ac4,
             0x16 => ExtensionTag::C2BundleDeliverySystem,
@@ -663,6 +688,22 @@ fn parse_c2(sel: &[u8]) -> Result<C2DeliverySystem> {
         c2_system_tuning_frequency_type: packed >> 6,
         active_ofdm_symbol_duration: (packed >> 3) & 0x07,
         guard_interval: packed & 0x07,
+    })
+}
+
+fn parse_t2mi(sel: &[u8]) -> Result<T2miDescriptor<'_>> {
+    if sel.len() < T2MI_MIN_LEN {
+        return Err(invalid("T2MI: body truncated"));
+    }
+    Ok(T2miDescriptor {
+        // Table 158 bytes 0-2:
+        //   byte 0: reserved_zero_future_use(5) | t2mi_stream_id(3)
+        //   byte 1: reserved_zero_future_use(5) | num_t2mi_streams_minus_one(3)
+        //   byte 2: reserved_zero_future_use(7) | pcr_iscr_common_clock_flag(1)
+        t2mi_stream_id: sel[0] & 0x07,
+        num_t2mi_streams_minus_one: sel[1] & 0x07,
+        pcr_iscr_common_clock_flag: (sel[2] & 0x01) != 0,
+        reserved_tail: &sel[T2MI_MIN_LEN..],
     })
 }
 
@@ -882,6 +923,7 @@ fn parse_body(tag_extension: u8, sel: &[u8]) -> Result<ExtensionBody<'_>> {
         0x0A => ExtensionBody::TargetRegionName(parse_target_region_name(sel)?),
         0x0B => ExtensionBody::ServiceRelocated(parse_service_relocated(sel)?),
         0x0D => ExtensionBody::C2DeliverySystem(parse_c2(sel)?),
+        0x11 => ExtensionBody::T2mi(parse_t2mi(sel)?),
         0x13 => ExtensionBody::UriLinkage(parse_uri_linkage(sel)?),
         0x15 => ExtensionBody::Ac4(parse_ac4(sel)?),
         0x16 => ExtensionBody::C2BundleDeliverySystem(parse_c2_bundle(sel)?),
@@ -959,6 +1001,7 @@ impl ExtensionBody<'_> {
             ExtensionBody::TargetRegionName(b) => 2 * ISO_639_LEN + b.region_loop.len(),
             ExtensionBody::ServiceRelocated(_) => SERVICE_RELOCATED_LEN,
             ExtensionBody::C2DeliverySystem(_) => C2_LEN,
+            ExtensionBody::T2mi(b) => T2MI_MIN_LEN + b.reserved_tail.len(),
             ExtensionBody::UriLinkage(b) => {
                 2 + b.uri.len()
                     + if b.min_polling_interval.is_some() {
@@ -1055,6 +1098,17 @@ impl ExtensionBody<'_> {
                 out[6] = (b.c2_system_tuning_frequency_type << 6)
                     | ((b.active_ofdm_symbol_duration & 0x07) << 3)
                     | (b.guard_interval & 0x07);
+            }
+            ExtensionBody::T2mi(b) => {
+                // Table 158 bytes 0-2:
+                // reserved_zero_future_use(5)=0 | t2mi_stream_id(3)
+                out[0] = b.t2mi_stream_id & 0x07;
+                // reserved_zero_future_use(5)=0 | num_t2mi_streams_minus_one(3)
+                out[1] = b.num_t2mi_streams_minus_one & 0x07;
+                // reserved_zero_future_use(7)=0 | pcr_iscr_common_clock_flag(1)
+                out[2] = u8::from(b.pcr_iscr_common_clock_flag);
+                out[T2MI_MIN_LEN..T2MI_MIN_LEN + b.reserved_tail.len()]
+                    .copy_from_slice(b.reserved_tail);
             }
             ExtensionBody::UriLinkage(b) => {
                 out[0] = b.uri_linkage_type;
@@ -1685,6 +1739,60 @@ mod tests {
             other => panic!("expected NetworkChangeNotify, got {other:?}"),
         }
         round_trip(&d);
+    }
+
+    #[test]
+    fn parse_t2mi_round_trip() {
+        // t2mi_stream_id=5, num_t2mi_streams_minus_one=2,
+        // pcr_iscr_common_clock_flag=true, 2-byte reserved tail.
+        let sel = [0x05, 0x02, 0x01, 0x00, 0x00];
+        let bytes = wrap(0x11, &sel);
+        let d = ExtensionDescriptor::parse(&bytes).unwrap();
+        assert_eq!(d.kind(), Some(ExtensionTag::T2mi));
+        match &d.body {
+            ExtensionBody::T2mi(b) => {
+                assert_eq!(b.t2mi_stream_id, 5);
+                assert_eq!(b.num_t2mi_streams_minus_one, 2);
+                assert!(b.pcr_iscr_common_clock_flag);
+                assert_eq!(b.reserved_tail, &[0x00, 0x00]);
+            }
+            other => panic!("expected T2mi, got {other:?}"),
+        }
+        // parse → serialize → parse round-trip (byte-identical)
+        round_trip(&d);
+        // Also verify that serialize → parse round-trips the flag false variant
+        let sel2 = [0x07, 0x00, 0x00, 0xFF];
+        let bytes2 = wrap(0x11, &sel2);
+        let d2 = ExtensionDescriptor::parse(&bytes2).unwrap();
+        round_trip(&d2);
+    }
+
+    #[test]
+    fn parse_t2mi_minimal() {
+        // Only the 3 mandatory bytes, no reserved tail.
+        let sel = [0x01, 0x03, 0x01];
+        let bytes = wrap(0x11, &sel);
+        let d = ExtensionDescriptor::parse(&bytes).unwrap();
+        match &d.body {
+            ExtensionBody::T2mi(b) => {
+                assert_eq!(b.t2mi_stream_id, 1);
+                assert_eq!(b.num_t2mi_streams_minus_one, 3);
+                assert!(b.pcr_iscr_common_clock_flag);
+                assert!(b.reserved_tail.is_empty());
+            }
+            other => panic!("expected T2mi, got {other:?}"),
+        }
+        round_trip(&d);
+    }
+
+    #[test]
+    fn parse_t2mi_rejects_truncated() {
+        let sel = [0xAA, 0xBB]; // only 2 bytes, need >= 3
+        let bytes = wrap(0x11, &sel);
+        assert!(matches!(
+            ExtensionDescriptor::parse(&bytes).unwrap_err(),
+            Error::InvalidDescriptor { tag: TAG, .. }
+        ));
     }
 
     #[test]
