@@ -30,9 +30,16 @@ pub trait Serialize {
     /// written (always equal to `serialized_len()`).
     fn serialize_into(&self, buf: &mut [u8]) -> Result<usize, Self::Error>;
 
-    /// Convenience: allocate a `Vec` and serialise into it. Panics only if
-    /// `serialize_into` misreports `serialized_len()` — a contract every
-    /// implementer is responsible for upholding.
+    /// Convenience: allocate a `Vec` and serialise into it.
+    ///
+    /// # Panics
+    /// Panics if `serialize_into` returns an error on a buffer of exactly
+    /// `serialized_len()` bytes. For values obtained by parsing real wire data
+    /// this never happens; it can only occur for a **hand-constructed** value
+    /// that violates a wire constraint (e.g. a section whose body exceeds the
+    /// 12-bit `section_length`). When building values by hand and that's a
+    /// possibility, call [`serialize_into`](Self::serialize_into) and handle the
+    /// error instead.
     fn to_bytes(&self) -> Vec<u8>
     where
         Self::Error: core::fmt::Debug,
