@@ -657,10 +657,24 @@ fn sat_body_serialized_len(body: &SatBody) -> usize {
     match body {
         SatBody::Raw(v) => v.len(),
         _ => {
-            let mut tmp = vec![0u8; 4096];
-            let mut writer = BitWriter::new(&mut tmp);
-            sat_body_write(body, &mut writer).expect("length calculation");
-            writer.bits_written().div_ceil(8)
+            // The hardened BitWriter errors (rather than silently truncating)
+            // on overrun, so feed it a buffer that's grown until the body fits.
+            // Real SAT bodies are bounded by the 12-bit section_length (<4 KiB);
+            // an over-large constructed body grows to the cap and is then
+            // rejected by the section_length guard in serialize_into — never a
+            // panic in this infallible length calc.
+            let mut cap = 4096usize;
+            loop {
+                let mut tmp = vec![0u8; cap];
+                let mut writer = BitWriter::new(&mut tmp);
+                if sat_body_write(body, &mut writer).is_ok() {
+                    break writer.bits_written().div_ceil(8);
+                }
+                if cap >= 1 << 20 {
+                    break cap; // pathological; serialize_into rejects it
+                }
+                cap *= 2;
+            }
         }
     }
 }

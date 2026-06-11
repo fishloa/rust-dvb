@@ -87,8 +87,8 @@ impl<'a> Parse<'a> for PatSection {
         while pos < end {
             if pos + ENTRY_LEN > end {
                 return Err(Error::BufferTooShort {
-                    need: end - pos,
-                    have: 0,
+                    need: ENTRY_LEN,
+                    have: end - pos,
                     what: "PatSection trailing entry bytes",
                 });
             }
