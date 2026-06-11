@@ -19,7 +19,7 @@ use dvb_si::compatibility::CompatibilityDescriptor;
 use dvb_si::descriptors::DescriptorLoop;
 use dvb_si::tables::RunningStatus;
 use dvb_si::tables::{
-    ait::{AitApplication, AitSection, ApplicationIdentifier},
+    ait::{AitApplication, AitSection, ApplicationIdentifier, ApplicationType, ControlCode},
     bat::{BatSection, BatTransportStream},
     cat::CatSection,
     cit::CitSection,
@@ -28,16 +28,16 @@ use dvb_si::tables::{
     downloadable_font_info::{DownloadableFontInfoSection, FontInfo},
     dsmcc::DsmccSection,
     eit::{EitEvent, EitKind, EitSection},
-    int::IntSection,
+    int::{IntActionType, IntSection},
     mpe::MpeDatagramSection,
     mpe_fec::{MpeFecSection, RealTimeParameters as MpeFecRtp},
     mpe_ifec::{MpeIfecSection, RealTimeParameters as MpeIfecRtp},
     nit::{NitKind, NitSection, NitTransportStream},
     pat::{PatEntry, PatSection},
-    pmt::{PmtSection, PmtStream},
+    pmt::{PmtSection, PmtStream, StreamType},
     protection_message::{ProtectionMessageBody, ProtectionMessageSection},
     rct::RctSection,
-    rnt::RntSection,
+    rnt::{ContextIdType, RntSection},
     rst::{RstEntry, RstSection},
     sat::SatBody,
     sat::SatSection,
@@ -47,7 +47,7 @@ use dvb_si::tables::{
     tdt::TdtSection,
     tot::TotSection,
     tsdt::TsdtSection,
-    unt::UntSection,
+    unt::{UntActionType, UntSection},
 };
 use dvb_si::text::{DvbText, LangCode};
 
@@ -133,7 +133,7 @@ fn pmt_serializes_to_valid_json() {
         pcr_pid: 0x64,
         program_info: DescriptorLoop::new(&[]),
         streams: vec![PmtStream {
-            stream_type: 0x02,
+            stream_type: StreamType::Mpeg2Video,
             elementary_pid: 0xC8,
             es_info: DescriptorLoop::new(&[]),
         }],
@@ -263,7 +263,7 @@ fn tot_serializes_to_valid_json() {
 #[test]
 fn ait_serializes_to_valid_json() {
     let ait = AitSection {
-        application_type: 0x0010,
+        application_type: ApplicationType::HbbTv,
         version_number: 0,
         current_next_indicator: true,
         test_application_flag: false,
@@ -275,7 +275,7 @@ fn ait_serializes_to_valid_json() {
                 organisation_id: 0x0001_0001,
                 application_id: 0x0001,
             },
-            control_code: 1,
+            control_code: ControlCode::Autostart,
             descriptors: DescriptorLoop::new(&[]),
         }],
     };
@@ -415,7 +415,7 @@ fn sat_serializes_to_valid_json() {
 #[test]
 fn unt_serializes_to_valid_json() {
     let unt = UntSection {
-        action_type: 0x01,
+        action_type: UntActionType::SystemSoftwareUpdate,
         oui_hash: 0x00,
         version_number: 0,
         current_next_indicator: true,
@@ -433,7 +433,7 @@ fn unt_serializes_to_valid_json() {
 #[test]
 fn int_serializes_to_valid_json() {
     let int = IntSection {
-        action_type: 0x01,
+        action_type: IntActionType::IpMacStreamLocation,
         platform_id_hash: 0x00,
         version_number: 0,
         current_next_indicator: true,
@@ -491,7 +491,7 @@ fn rnt_serializes_to_valid_json() {
         current_next_indicator: true,
         section_number: 0,
         last_section_number: 0,
-        context_id_type: 0,
+        context_id_type: ContextIdType::BouquetId,
         common_descriptors: DescriptorLoop::new(&[]),
         resolution_providers: vec![],
     };
