@@ -15,17 +15,12 @@ const HEADER_LEN: usize = 2;
 const BODY_LEN: u8 = 4;
 
 /// Best-effort, non-exhaustive mapping from a 32-bit `private_data_specifier`
-/// to a human-readable organization name.  Verified entries from the
-/// DVB Services registry.
+/// to a human-readable organization name.  Generated at build time from
+/// vendored TSDuck `.names` data (`registries/tsPDS.names`); attribution in
+/// `registries/README.md`.
 #[must_use]
 pub fn private_data_specifier_name(v: u32) -> Option<&'static str> {
-    match v {
-        0x0000_0028 => Some("EACEM / EICTA"),
-        0x0000_0029 => Some("NorDig"),
-        0x0000_233A => Some("UK DTT (Independent Television Commission / DTG)"),
-        0x0000_0002 => Some("BSkyB"),
-        _ => None,
-    }
+    crate::registry_names::private_data_specifier_name_generated(v)
 }
 
 /// Private Data Specifier Descriptor (tag 0x5F).
@@ -160,28 +155,26 @@ mod tests {
     }
 
     #[test]
-    fn specifier_name_verified() {
+    fn specifier_name_exact_entry() {
+        // Exact entry from tsPDS.names [PrivateDataSpecifier].
+        assert_eq!(private_data_specifier_name(0x0000_0001), Some("SES Astra"));
         assert_eq!(
-            private_data_specifier_name(0x0000_0028),
-            Some("EACEM / EICTA")
+            private_data_specifier_name(0x0000_0005),
+            Some("ARD, ZDF, ORF")
         );
-        assert_eq!(private_data_specifier_name(0x0000_0029), Some("NorDig"));
-        assert_eq!(
-            private_data_specifier_name(0x0000_233A),
-            Some("UK DTT (Independent Television Commission / DTG)")
-        );
-        assert_eq!(private_data_specifier_name(0x0000_0002), Some("BSkyB"));
     }
 
     #[test]
-    fn specifier_name_removed_entries_return_none() {
-        assert_eq!(private_data_specifier_name(0x0000_001A), None);
-        assert_eq!(private_data_specifier_name(0x0000_002A), None);
-        assert_eq!(private_data_specifier_name(0x0000_0030), None);
+    fn specifier_name_range_entry() {
+        // Range entry 0x00000002-0x00000004 => "BskyB" from tsPDS.names.
+        assert_eq!(private_data_specifier_name(0x0000_0002), Some("BskyB"));
+        assert_eq!(private_data_specifier_name(0x0000_0004), Some("BskyB"));
     }
 
     #[test]
     fn specifier_name_unknown() {
+        assert_eq!(private_data_specifier_name(0x0000_0000), None);
+        assert_eq!(private_data_specifier_name(0x0000_003C), None);
         assert_eq!(private_data_specifier_name(0xDEAD_BEEF), None);
     }
 }
