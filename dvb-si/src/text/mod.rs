@@ -529,6 +529,12 @@ fn combine(prefix: u8, base: u8) -> Option<char> {
 
 fn decode_iso_8859(n: u8, bytes: &[u8]) -> String {
     use encoding_rs::*;
+    // ISO/IEC 8859-1 (Latin-1) is the first 256 Unicode code points exactly, so
+    // a byte→char cast is a correct decode. (encoding_rs has no pure 8859-1;
+    // WINDOWS_1252 differs in 0x80–0x9F, so don't use it here.)
+    if n == 1 {
+        return bytes.iter().map(|&b| b as char).collect();
+    }
     let encoding: &'static Encoding = match n {
         2 => ISO_8859_2,
         3 => ISO_8859_3,
@@ -543,7 +549,7 @@ fn decode_iso_8859(n: u8, bytes: &[u8]) -> String {
         13 => ISO_8859_13,
         14 => ISO_8859_14,
         15 => ISO_8859_15,
-        _ => return bytes.iter().map(|&b| b as char).collect(),
+        _ => return bytes.iter().map(|_| '\u{FFFD}').collect(),
     };
     let (cow, _, _) = encoding.decode(bytes);
     cow.into_owned()
@@ -689,6 +695,25 @@ mod tests {
         let s = decode_dvb_string(&[0x16, 0xAA, 0xBB, 0xCC]);
         assert_eq!(s.chars().count(), 3);
         assert!(s.chars().all(|c| c == '\u{FFFD}'));
+    }
+
+    /// An unsupported ISO 8859 part number (via 0x10 extended selector) yields
+    /// U+FFFD per byte rather than Latin-1 passthrough.
+    #[test]
+    fn selector_0x10_iso_8859_1_decodes_latin1() {
+        // 0x10 0x00 0x01 → ISO/IEC 8859-1 (Latin-1): bytes are the first 256
+        // Unicode code points 1:1, so 0xE9 → 'é'. (A valid charset; must NOT be
+        // treated as unsupported / U+FFFD.)
+        let s = decode_dvb_string(&[0x10, 0x00, 0x01, 0x41, 0xE9]);
+        assert_eq!(s, "Aé");
+    }
+
+    #[test]
+    fn unsupported_iso_8859_12_yields_replacement() {
+        // 0x10 0x00 0x0C → ISO 8859-12 does not exist (reserved); unsupported
+        // parts decode to U+FFFD, not fabricated text.
+        let s = decode_dvb_string(&[0x10, 0x00, 0x0C, 0x41, 0x42]);
+        assert!(s.chars().all(|c| c == '\u{FFFD}'), "got: {s:?}");
     }
 
     /// Pins the GR-area single-byte mappings to ETSI EN 300 468 V1.19.1

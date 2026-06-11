@@ -53,7 +53,7 @@ impl<'a> NmTsIter<'a> {
 
     /// Return the unconsumed tail of the data field.
     pub fn remaining(self) -> &'a [u8] {
-        &self.data[self.pos..]
+        self.data.get(self.pos..).unwrap_or(&[])
     }
 }
 
@@ -102,7 +102,7 @@ impl<'a> HemTsIter<'a> {
 
     /// Return the unconsumed tail of the data field.
     pub fn remaining(self) -> &'a [u8] {
-        &self.data[self.pos..]
+        self.data.get(self.pos..).unwrap_or(&[])
     }
 }
 
@@ -129,18 +129,45 @@ impl Iterator for HemTsIter<'_> {
     }
 }
 
+/// Concrete user-packet iterator returned by [`up_iter`].
+///
+/// Selects NM or HEM iteration at runtime without heap allocation or
+/// dynamic dispatch — the mode is baked into the variant.
+#[derive(Clone, Copy)]
+pub enum UpIter<'a> {
+    /// Normal Mode iteration.
+    Normal(NmTsIter<'a>),
+    /// High Efficiency Mode iteration.
+    HighEfficiency(HemTsIter<'a>),
+}
+
+impl Iterator for UpIter<'_> {
+    type Item = [u8; NM_UP_SIZE];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Normal(it) => it.next(),
+            Self::HighEfficiency(it) => it.next(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::Normal(it) => it.size_hint(),
+            Self::HighEfficiency(it) => it.size_hint(),
+        }
+    }
+}
+
 /// Build an appropriate user-packet iterator for the given BBHEADER.
 ///
 /// Returns either an NM or HEM iterator depending on the detected mode.
 /// The caller must handle SYNCD alignment before calling this — typically
 /// by skipping `syncd / 8` bytes at the start of the data field.
-pub fn up_iter<'a>(
-    data: &'a [u8],
-    bbheader: &Bbheader,
-) -> Box<dyn Iterator<Item = [u8; NM_UP_SIZE]> + 'a> {
+pub fn up_iter<'a>(data: &'a [u8], bbheader: &Bbheader) -> UpIter<'a> {
     match bbheader.mode {
-        Mode::Normal => Box::new(NmTsIter::new(data)),
-        Mode::HighEfficiency => Box::new(HemTsIter::new(data, bbheader.matype.npd)),
+        Mode::Normal => UpIter::Normal(NmTsIter::new(data)),
+        Mode::HighEfficiency => UpIter::HighEfficiency(HemTsIter::new(data, bbheader.matype.npd)),
     }
 }
 
@@ -150,11 +177,15 @@ pub fn up_iter<'a>(
 ///
 /// Use `feed_nm` / `feed_hem` per received frame; the returned Vec holds
 /// whichever 188-byte TS packets completed during that frame.
+///
+/// Diagnostic counters are accumulated and exposed via [`stats`](CarryOverExtractor::stats).
 pub struct CarryOverExtractor {
     /// Partial TS packet being assembled (sync byte position 0).
     buf: [u8; NM_UP_SIZE],
     /// Bytes already written into `buf`.
     pos: usize,
+    /// Diagnostic counters (see [`CarryOverStats`]).
+    stats: CarryOverStats,
 }
 
 impl Default for CarryOverExtractor {
@@ -162,14 +193,49 @@ impl Default for CarryOverExtractor {
         Self {
             buf: [0u8; NM_UP_SIZE],
             pos: 0,
+            stats: CarryOverStats::default(),
         }
     }
+}
+
+/// Diagnostic counters for a [`CarryOverExtractor`], read via
+/// [`CarryOverExtractor::stats`].
+///
+/// The extractor stays resilient (it never errors or panics on wire-derived
+/// input — bad frames are skipped so a stream keeps flowing). These counters
+/// make the otherwise-silent skips observable. Note the distinction:
+/// `npd_unsupported` counts **valid data we failed to recover** (a capability
+/// gap), whereas the others count malformed/misrouted input.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CarryOverStats {
+    /// HEM frames skipped because Null-Packet-Deletion (DNP) reinsertion is not
+    /// implemented. These carry **valid** user packets that are NOT recovered —
+    /// a known capability gap, not wire corruption. **Non-zero means real data
+    /// was dropped**; treat it as a signal that NPD-HEM input is unsupported.
+    pub npd_unsupported: u64,
+    /// Frames whose 10-byte BBHEADER failed to parse.
+    pub header_parse_failures: u64,
+    /// Frames fed to the wrong mode path (an NM header to `feed_hem_into`, or a
+    /// HEM header to `feed_nm_into`).
+    pub mode_mismatches: u64,
+    /// Carried-over partial user packets discarded on a SYNCD/stride mismatch
+    /// (the extractor resynchronised at the frame's SYNCD).
+    pub partial_discards: u64,
 }
 
 impl CarryOverExtractor {
     /// Create a fresh extractor with no carried-over state.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Diagnostic counters accumulated across all `feed_*` calls — see
+    /// [`CarryOverStats`]. Check `npd_unsupported` in particular: a non-zero
+    /// value means valid HEM frames were dropped (NPD reinsertion unsupported).
+    #[must_use]
+    pub fn stats(&self) -> CarryOverStats {
+        self.stats
     }
 
     /// Feed a HEM BBFrame's header + data field. Returns any TS packets that
@@ -204,14 +270,19 @@ impl CarryOverExtractor {
         // NPD/DNP reinsertion is not yet implemented; rather than panic on
         // wire-derived input, produce no output (out is already cleared).
         if npd {
+            self.stats.npd_unsupported += 1;
             return;
         }
         let hdr = match Bbheader::parse(bbheader_bytes) {
             Ok(h) => h,
-            Err(_) => return,
+            Err(_) => {
+                self.stats.header_parse_failures += 1;
+                return;
+            }
         };
         // Mismatched mode (caller fed a non-HEM header): no output, no panic.
         if hdr.mode != Mode::HighEfficiency {
+            self.stats.mode_mismatches += 1;
             return;
         }
 
@@ -230,6 +301,7 @@ impl CarryOverExtractor {
                 self.pos = 0;
             } else {
                 // Stride mismatch — discard partial and resync to syncd.
+                self.stats.partial_discards += 1;
                 self.pos = 0;
             }
         }
@@ -268,7 +340,7 @@ impl CarryOverExtractor {
     }
 
     /// Buffer-reusing variant of [`feed_nm`](Self::feed_nm). Clears `out`, then
-    /// appends the TS packets that completed during this frame. Reuse the same
+    /// appends the TS packets that completed during that frame. Reuse the same
     /// `Vec` across frames to avoid a per-frame heap allocation.
     pub fn feed_nm_into(
         &mut self,
@@ -279,10 +351,14 @@ impl CarryOverExtractor {
         out.clear();
         let hdr = match Bbheader::parse(bbheader_bytes) {
             Ok(h) => h,
-            Err(_) => return,
+            Err(_) => {
+                self.stats.header_parse_failures += 1;
+                return;
+            }
         };
         // Mismatched mode (caller fed a non-NM header): no output, no panic.
         if hdr.mode != Mode::Normal {
+            self.stats.mode_mismatches += 1;
             return;
         }
 
@@ -300,6 +376,8 @@ impl CarryOverExtractor {
                 out.push(self.buf);
                 self.pos = 0;
             } else {
+                // Stride mismatch — discard partial and resync to syncd.
+                self.stats.partial_discards += 1;
                 self.pos = 0;
             }
         }
@@ -619,5 +697,50 @@ mod tests {
             a2, b2,
             "frame 2 (carry-over) output matches; buffer was cleared"
         );
+    }
+
+    #[test]
+    fn remaining_safe_when_pos_equals_len() {
+        let data = vec![0xAA; NM_UP_SIZE];
+        let mut iter = NmTsIter::new(&data);
+        let _p = iter.next().unwrap();
+        // pos == data.len() — must not panic
+        let remaining = iter.remaining();
+        assert!(remaining.is_empty());
+    }
+
+    #[test]
+    fn remaining_safe_when_pos_exceeds_len() {
+        // Construct an iterator and manually set pos beyond data length.
+        // This cannot happen through normal iteration, but the safe
+        // get().unwrap_or(&[]) handles it gracefully.
+        let data = vec![0xAA; 10];
+        let iter = NmTsIter {
+            data: &data,
+            pos: 20,
+        };
+        let remaining = iter.remaining();
+        assert!(remaining.is_empty());
+    }
+
+    #[test]
+    fn stats_count_npd_skip_and_mode_mismatch() {
+        let mut ext = CarryOverExtractor::new();
+        let mut out = Vec::new();
+
+        // Valid HEM header but NPD set: unsupported → no output, counted as a
+        // dropped-valid-data event (not wire corruption).
+        let hem = make_hem_header(true).serialize();
+        ext.feed_hem_into(&hem, &[0u8; NM_UP_SIZE], true, &mut out);
+        assert!(out.is_empty());
+        assert_eq!(ext.stats().npd_unsupported, 1);
+
+        // NM header fed to the HEM path → mode mismatch, counted.
+        let nm = make_nm_header(0).serialize();
+        ext.feed_hem_into(&nm, &[0u8; NM_UP_SIZE], false, &mut out);
+        assert!(out.is_empty());
+        assert_eq!(ext.stats().mode_mismatches, 1);
+        // Earlier counter is unchanged.
+        assert_eq!(ext.stats().npd_unsupported, 1);
     }
 }
