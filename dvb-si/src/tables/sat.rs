@@ -464,8 +464,6 @@ pub struct CovarianceData {
 pub struct PositionV3Satellite {
     /// `satellite_id` (24 bits).
     pub satellite_id: u32,
-    /// `metadata_flag`.
-    pub metadata_flag: bool,
     /// `usable_start_time_flag`.
     pub usable_start_time_flag: bool,
     /// `usable_stop_time_flag`.
@@ -474,11 +472,10 @@ pub struct PositionV3Satellite {
     pub ephemeris_accel_flag: bool,
     /// `covariance_flag`.
     pub covariance_flag: bool,
-    /// Metadata block (optional).
+    /// Metadata block (optional); its presence also drives the
+    /// `metadata_flag` bit on the wire.
     pub metadata: Option<PositionV3Metadata>,
-    /// `ephemeris_data_count` (16 bits).
-    pub ephemeris_data_count: u16,
-    /// Ephemeris data entries.
+    /// Ephemeris data entries; their count is derived on serialization.
     pub ephemeris_data: Vec<EphemerisData>,
     /// Covariance data (optional).
     pub covariance: Option<CovarianceData>,
@@ -745,71 +742,44 @@ fn sat_body_write(body: &SatBody, w: &mut BitWriter, count_only: bool) {
             for sat in &b.satellites {
                 w.write_u(24, sat.satellite_id as u64);
                 w.write_zero(3);
-                w.write_u(1, sat.metadata_flag as u64);
+                w.write_u(1, u8::from(sat.metadata.is_some()) as u64);
                 w.write_u(1, sat.usable_start_time_flag as u64);
                 w.write_u(1, sat.usable_stop_time_flag as u64);
                 w.write_u(1, sat.ephemeris_accel_flag as u64);
                 w.write_u(1, sat.covariance_flag as u64);
-                if sat.metadata_flag {
-                    if let Some(ref md) = sat.metadata {
-                        w.write_u(8, md.total_start_time_year as u64);
-                        w.write_zero(7);
-                        w.write_u(9, md.total_start_time_day as u64);
-                        w.write_u(32, md.total_start_time_day_fraction as u64);
-                        w.write_u(8, md.total_stop_time_year as u64);
-                        w.write_zero(7);
-                        w.write_u(9, md.total_stop_time_day as u64);
-                        w.write_u(32, md.total_stop_time_day_fraction as u64);
-                        w.write_zero(1);
-                        w.write_u(1, md.interpolation_flag as u64);
-                        w.write_u(3, md.interpolation_type as u64);
-                        w.write_u(3, md.interpolation_degree as u64);
-                        if sat.usable_start_time_flag {
-                            if let Some(ref ut) = md.usable_start_time {
-                                w.write_u(8, ut.year as u64);
-                                w.write_zero(7);
-                                w.write_u(9, ut.day as u64);
-                                w.write_u(32, ut.day_fraction as u64);
-                            } else {
-                                w.write_zero(8);
-                                w.write_zero(7);
-                                w.write_zero(9);
-                                w.write_zero(32);
-                            }
-                        }
-                        if sat.usable_stop_time_flag {
-                            if let Some(ref ut) = md.usable_stop_time {
-                                w.write_u(8, ut.year as u64);
-                                w.write_zero(7);
-                                w.write_u(9, ut.day as u64);
-                                w.write_u(32, ut.day_fraction as u64);
-                            } else {
-                                w.write_zero(8);
-                                w.write_zero(7);
-                                w.write_zero(9);
-                                w.write_zero(32);
-                            }
-                        }
-                    } else {
-                        w.write_zero(8);
-                        w.write_zero(7);
-                        w.write_zero(9);
-                        w.write_zero(32);
-                        w.write_zero(8);
-                        w.write_zero(7);
-                        w.write_zero(9);
-                        w.write_zero(32);
-                        w.write_zero(1);
-                        w.write_zero(1);
-                        w.write_zero(3);
-                        w.write_zero(3);
-                        if sat.usable_start_time_flag {
+                if let Some(ref md) = sat.metadata {
+                    w.write_u(8, md.total_start_time_year as u64);
+                    w.write_zero(7);
+                    w.write_u(9, md.total_start_time_day as u64);
+                    w.write_u(32, md.total_start_time_day_fraction as u64);
+                    w.write_u(8, md.total_stop_time_year as u64);
+                    w.write_zero(7);
+                    w.write_u(9, md.total_stop_time_day as u64);
+                    w.write_u(32, md.total_stop_time_day_fraction as u64);
+                    w.write_zero(1);
+                    w.write_u(1, md.interpolation_flag as u64);
+                    w.write_u(3, md.interpolation_type as u64);
+                    w.write_u(3, md.interpolation_degree as u64);
+                    if sat.usable_start_time_flag {
+                        if let Some(ref ut) = md.usable_start_time {
+                            w.write_u(8, ut.year as u64);
+                            w.write_zero(7);
+                            w.write_u(9, ut.day as u64);
+                            w.write_u(32, ut.day_fraction as u64);
+                        } else {
                             w.write_zero(8);
                             w.write_zero(7);
                             w.write_zero(9);
                             w.write_zero(32);
                         }
-                        if sat.usable_stop_time_flag {
+                    }
+                    if sat.usable_stop_time_flag {
+                        if let Some(ref ut) = md.usable_stop_time {
+                            w.write_u(8, ut.year as u64);
+                            w.write_zero(7);
+                            w.write_u(9, ut.day as u64);
+                            w.write_u(32, ut.day_fraction as u64);
+                        } else {
                             w.write_zero(8);
                             w.write_zero(7);
                             w.write_zero(9);
@@ -817,7 +787,7 @@ fn sat_body_write(body: &SatBody, w: &mut BitWriter, count_only: bool) {
                         }
                     }
                 }
-                w.write_u(16, sat.ephemeris_data_count as u64);
+                w.write_u(16, sat.ephemeris_data.len() as u64);
                 for ed in &sat.ephemeris_data {
                     w.write_u(8, ed.epoch_year as u64);
                     w.write_zero(7);
@@ -1397,13 +1367,11 @@ fn sat_body_parse(sat_table_id: u8, data: &[u8]) -> Result<SatBody> {
                 };
                 satellites.push(PositionV3Satellite {
                     satellite_id,
-                    metadata_flag,
                     usable_start_time_flag,
                     usable_stop_time_flag,
                     ephemeris_accel_flag,
                     covariance_flag,
                     metadata,
-                    ephemeris_data_count,
                     ephemeris_data,
                     covariance,
                 });
@@ -1518,6 +1486,22 @@ impl Serialize for SatSection {
             });
         }
         let section_length = (len - SECTION_LENGTH_PREFIX) as u16;
+        if section_length > 0x0FFF {
+            return Err(Error::SectionLengthOverflow {
+                declared: section_length as usize,
+                available: 0x0FFF,
+            });
+        }
+        if let SatBody::PositionV3(ref v3) = self.body {
+            for sat in &v3.satellites {
+                if sat.ephemeris_data.len() > u16::MAX as usize {
+                    return Err(Error::SectionLengthOverflow {
+                        declared: sat.ephemeris_data.len(),
+                        available: u16::MAX as usize,
+                    });
+                }
+            }
+        }
         buf[0] = TABLE_ID;
         buf[1] = super::SECTION_B1_SSI
             | (u8::from(self.private_indicator) << 6)
@@ -1879,7 +1863,6 @@ mod tests {
             creation_date_day_fraction: 0,
             satellites: vec![PositionV3Satellite {
                 satellite_id: 0xABCDEF,
-                metadata_flag: true,
                 usable_start_time_flag: true,
                 usable_stop_time_flag: false,
                 ephemeris_accel_flag: false,
@@ -1901,7 +1884,6 @@ mod tests {
                     }),
                     usable_stop_time: None,
                 }),
-                ephemeris_data_count: 0,
                 ephemeris_data: Vec::new(),
                 covariance: None,
             }],
@@ -2229,13 +2211,11 @@ mod tests {
                 creation_date_day_fraction: 0,
                 satellites: vec![PositionV3Satellite {
                     satellite_id: 1,
-                    metadata_flag: false,
                     usable_start_time_flag: false,
                     usable_stop_time_flag: false,
                     ephemeris_accel_flag: false,
                     covariance_flag: false,
                     metadata: None,
-                    ephemeris_data_count: 5,
                     ephemeris_data: vec![
                         EphemerisData {
                             epoch_year: 25,
@@ -2405,5 +2385,205 @@ mod tests {
             other => panic!("expected PositionV3, got {other:?}"),
         }
         assert_eq!((bytes[3] >> 2) & 0x3F, 4);
+    }
+
+    // ── Hand-built byte-literal anchor tests ──────────────────────────────────
+    // Each constructs a wire byte array by hand (no serializer) and verifies
+    // that the bit-packed parser maps fields to the expected bit positions.
+    // Re-serialization must then produce byte-identical output.
+
+    fn crc_section(bytes: &[u8]) -> Vec<u8> {
+        let mut v = bytes.to_vec();
+        let crc = dvb_common::crc32_mpeg2::compute(&v);
+        v.extend_from_slice(&crc.to_be_bytes());
+        v
+    }
+
+    #[test]
+    fn hand_built_time_association_anchor() {
+        // section_length = body_len(19) + 10 = 29 = 0x001D
+        // Bit breakdown in body (association_type=0, ncr_base=1, all else 0):
+        //   [0:3]   association_type(4)=0
+        //   [4:7]   reserved/ncr_leap(4)=0
+        //   [8:40]  ncr_base(33)=1    →  LSB lands at bit 40 → byte 5 bit 7
+        //   [41:46] skip(6)
+        //   [47:55] ncr_ext(9)=0
+        //   [56:119] timestamp_seconds(64)=0
+        //   [120:151] timestamp_nanoseconds(32)=0
+        let bytes = crc_section(&[
+            0x4D, 0xF0, 0x1D, 0x08, 0x00, 0xCB, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ]);
+        let sat = SatSection::parse(&bytes).unwrap();
+        assert_eq!(sat.satellite_table_id, 2);
+        match &sat.body {
+            SatBody::TimeAssociation(ta) => {
+                assert_eq!(ta.association_type, 0);
+                assert_eq!(ta.ncr_base, 1);
+                assert_eq!(ta.ncr_ext, 0);
+                assert_eq!(ta.association_timestamp_seconds, 0);
+                assert_eq!(ta.association_timestamp_nanoseconds, 0);
+            }
+            other => panic!("expected TimeAssociation, got {other:?}"),
+        }
+        let mut buf = vec![0u8; sat.serialized_len()];
+        sat.serialize_into(&mut buf).unwrap();
+        assert_eq!(buf, bytes, "byte-identical re-serialize");
+    }
+
+    #[test]
+    fn hand_built_position_v2_orbital_anchor() {
+        // section_length = body_len(7) + 10 = 17 = 0x0011
+        // Bit breakdown in body (one satellite, orbital position):
+        //   [0:23]   satellite_id(24)=0x010203
+        //   [24:30]  skip(7)
+        //   [31]     position_system(1)=0 → orbital
+        //   [32:47]  orbital_position(16)=0x1234
+        //   [48]     west_east_flag(1)=1
+        //   [49:55]  skip(7)
+        let bytes = crc_section(&[
+            0x4D, 0xF0, 0x11, 0x00, 0x00, 0xCB, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x00, 0x12,
+            0x34, 0x80,
+        ]);
+        let sat = SatSection::parse(&bytes).unwrap();
+        assert_eq!(sat.satellite_table_id, 0);
+        match &sat.body {
+            SatBody::PositionV2(pv2) => {
+                assert_eq!(pv2.satellites.len(), 1);
+                let s = &pv2.satellites[0];
+                assert_eq!(s.satellite_id, 0x010203);
+                match &s.position {
+                    PositionSystem::Orbital {
+                        orbital_position,
+                        west_east_flag,
+                    } => {
+                        assert_eq!(*orbital_position, 0x1234);
+                        assert!(*west_east_flag);
+                    }
+                    other => panic!("expected Orbital, got {other:?}"),
+                }
+            }
+            other => panic!("expected PositionV2, got {other:?}"),
+        }
+        let mut buf = vec![0u8; sat.serialized_len()];
+        sat.serialize_into(&mut buf).unwrap();
+        assert_eq!(buf, bytes, "byte-identical re-serialize");
+    }
+
+    #[test]
+    fn hand_built_cell_fragment_anchor() {
+        // section_length = body_len(10) + 10 = 20 = 0x0014
+        // Bit breakdown in body (one fragment, no center, empty lists):
+        //   [0:31]   cell_fragment_id(32)=0xAABBCCDD
+        //   [32]     first_occurrence(1)=0
+        //   [33]     last_occurrence(1)=1
+        //   [34:37]  skip(4)
+        //   [38:47]  delivery_system_ids_count(10)=0
+        //   [48:53]  skip(6)
+        //   [54:63]  new_delivery_systems_count(10)=0
+        //   [64:69]  skip(6)
+        //   [70:79]  obsolescent_delivery_systems_count(10)=0
+        let bytes = crc_section(&[
+            0x4D, 0xF0, 0x14, 0x04, 0x00, 0xCB, 0x00, 0x00, 0x00, 0xAA, 0xBB, 0xCC, 0xDD, 0x40,
+            0x00, 0x00, 0x00, 0x00, 0x00,
+        ]);
+        let sat = SatSection::parse(&bytes).unwrap();
+        assert_eq!(sat.satellite_table_id, 1);
+        match &sat.body {
+            SatBody::CellFragment(cf) => {
+                assert_eq!(cf.fragments.len(), 1);
+                let f = &cf.fragments[0];
+                assert_eq!(f.cell_fragment_id, 0xAABBCCDD);
+                assert!(!f.first_occurrence);
+                assert!(f.last_occurrence);
+                assert!(f.center.is_none());
+                assert!(f.delivery_system_ids.is_empty());
+                assert!(f.new_delivery_systems.is_empty());
+                assert!(f.obsolescent_delivery_systems.is_empty());
+            }
+            other => panic!("expected CellFragment, got {other:?}"),
+        }
+        let mut buf = vec![0u8; sat.serialized_len()];
+        sat.serialize_into(&mut buf).unwrap();
+        assert_eq!(buf, bytes, "byte-identical re-serialize");
+    }
+
+    #[test]
+    fn hand_built_beamhopping_mode0_anchor() {
+        // section_length = body_len(31) + 10 = 41 = 0x0029
+        // Bit breakdown in body (one plan, Mode0, all times zero):
+        //   [0:31]   plan_id(32)=0xDEADBEEF
+        //   [32:35]  skip(4)
+        //   [36:47]  plan_length(12)=25 → 0x019
+        //   [48:53]  skip(6)
+        //   [54:55]  plan_mode(2)=0
+        //   [56:247] all zero (times, durations)
+        let bytes = crc_section(&[
+            0x4D, 0xF0, 0x29, 0x0C, 0x00, 0xCB, 0x00, 0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF, 0x00,
+            0x19, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ]);
+        let sat = SatSection::parse(&bytes).unwrap();
+        assert_eq!(sat.satellite_table_id, 3);
+        match &sat.body {
+            SatBody::BeamhoppingTimePlan(bhp) => {
+                assert_eq!(bhp.plans.len(), 1);
+                let p = &bhp.plans[0];
+                assert_eq!(p.beamhopping_time_plan_id, 0xDEADBEEF);
+                assert_eq!(p.time_plan_mode, 0);
+                assert_eq!(p.time_of_application_base, 0);
+                assert_eq!(p.cycle_duration_base, 0);
+                match &p.mode {
+                    BeamhoppingMode::Mode0 {
+                        dwell_duration_base,
+                        dwell_duration_ext,
+                        on_time_base,
+                        on_time_ext,
+                    } => {
+                        assert_eq!(*dwell_duration_base, 0);
+                        assert_eq!(*dwell_duration_ext, 0);
+                        assert_eq!(*on_time_base, 0);
+                        assert_eq!(*on_time_ext, 0);
+                    }
+                    other => panic!("expected Mode0, got {other:?}"),
+                }
+            }
+            other => panic!("expected BeamhoppingTimePlan, got {other:?}"),
+        }
+        let mut buf = vec![0u8; sat.serialized_len()];
+        sat.serialize_into(&mut buf).unwrap();
+        assert_eq!(buf, bytes, "byte-identical re-serialize");
+    }
+
+    #[test]
+    fn hand_built_position_v3_anchor() {
+        // section_length = body_len(8) + 10 = 18 = 0x0012
+        // Bit breakdown in body (empty satellites):
+        //   [0:3]   oem_version_major(4)=1
+        //   [4:7]   oem_version_minor(4)=2        → byte 0 = 0x12
+        //   [8:15]  creation_date_year(8)=26       → byte 1 = 0x1A
+        //   [16:22] skip(7)
+        //   [23:31] creation_date_day(9)=42        → byte 2 bit 0=0, byte 3 = 0x2A
+        //   [32:63] creation_date_day_fraction(32)=0 → bytes 4-7
+        let bytes = crc_section(&[
+            0x4D, 0xF0, 0x12, 0x10, 0x00, 0xCB, 0x00, 0x00, 0x00, 0x12, 0x1A, 0x00, 0x2A, 0x00,
+            0x00, 0x00, 0x00,
+        ]);
+        let sat = SatSection::parse(&bytes).unwrap();
+        assert_eq!(sat.satellite_table_id, 4);
+        match &sat.body {
+            SatBody::PositionV3(v3) => {
+                assert_eq!(v3.oem_version_major, 1);
+                assert_eq!(v3.oem_version_minor, 2);
+                assert_eq!(v3.creation_date_year, 26);
+                assert_eq!(v3.creation_date_day, 42);
+                assert_eq!(v3.creation_date_day_fraction, 0);
+                assert!(v3.satellites.is_empty());
+            }
+            other => panic!("expected PositionV3, got {other:?}"),
+        }
+        let mut buf = vec![0u8; sat.serialized_len()];
+        sat.serialize_into(&mut buf).unwrap();
+        assert_eq!(buf, bytes, "byte-identical re-serialize");
     }
 }
