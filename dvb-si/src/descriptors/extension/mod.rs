@@ -65,7 +65,6 @@
 
 use crate::error::{Error, Result};
 use crate::text::{DvbText, LangCode};
-use crate::traits::Descriptor;
 use dvb_common::{Parse, Serialize};
 
 mod ac4;
@@ -328,9 +327,9 @@ declare_extension_bodies! {'a;
     /// `0x0D` — C2_delivery_system (Table 115, §6.4.6.1).
     C2DeliverySystem = 0x0D => C2DeliverySystem,
     /// `0x10` — video_depth_range (Table 160, §6.4.16.1).
-    VideoDepthRange = 0x10 => VideoDepthRangeDescriptor<'a>,
+    VideoDepthRange = 0x10 => VideoDepthRange<'a>,
     /// `0x11` — T2-MI (Table 158, §6.4.14).
-    T2mi = 0x11 => T2miDescriptor<'a>,
+    T2mi = 0x11 => T2mi<'a>,
     /// `0x13` — URI_linkage (Table 159, §6.4.16.1).
     UriLinkage = 0x13 => UriLinkage<'a>,
     /// `0x15` — AC-4 (annex D).
@@ -346,7 +345,7 @@ declare_extension_bodies! {'a;
     /// `0x22` — service_prominence (Table 162c, §6.4.18).
     ServiceProminence = 0x22 => ServiceProminence<'a>,
     /// `0x23` — vvc_subpictures (Table 162a, §6.4.17).
-    VvcSubpictures = 0x23 => VvcSubpicturesDescriptor<'a>,
+    VvcSubpictures = 0x23 => VvcSubpictures<'a>,
 }
 
 /// Per-body metadata for the extension-descriptor sub-dispatch — the
@@ -463,14 +462,6 @@ impl Serialize for ExtensionDescriptor<'_> {
         Ok(len)
     }
 }
-
-impl<'a> Descriptor<'a> for ExtensionDescriptor<'a> {
-    const TAG: u8 = TAG;
-    fn descriptor_length(&self) -> u8 {
-        (self.serialized_len() - HEADER_LEN) as u8
-    }
-}
-
 impl<'a> crate::traits::DescriptorDef<'a> for ExtensionDescriptor<'a> {
     const TAG: u8 = TAG;
     const NAME: &'static str = "EXTENSION";
@@ -558,7 +549,7 @@ mod tests {
             }),
         };
         // tag_ext(1) + message_id(1) + iso(3) + text(5) = 10
-        assert_eq!(d.descriptor_length(), 10);
+        assert_eq!(d.serialized_len() - 2, 10);
     }
 
     /// Serialization is deterministic for an all-owned typed body (no borrowed

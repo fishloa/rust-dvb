@@ -9,7 +9,6 @@
 use crate::descriptors::DescriptorLoop;
 use crate::error::{Error, Result};
 use crate::text::DvbText;
-use crate::traits::Table;
 use dvb_common::{Parse, Serialize};
 
 /// `table_id` for the Resolution provider Notification Table.
@@ -379,12 +378,6 @@ impl Serialize for RntSection<'_> {
         Ok(len)
     }
 }
-
-impl<'a> Table<'a> for RntSection<'a> {
-    const TABLE_ID: u8 = TABLE_ID;
-    const PID: u16 = PID;
-}
-
 impl<'a> crate::traits::TableDef<'a> for RntSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "RESOLUTION_PROVIDER_NOTIFICATION";
@@ -487,8 +480,9 @@ mod tests {
         };
         let mut buf = vec![0u8; rnt.serialized_len()];
         rnt.serialize_into(&mut buf).unwrap();
-        let mut buf2 = vec![0u8; rnt.serialized_len()];
-        rnt.serialize_into(&mut buf2).unwrap();
+        let re = RntSection::parse(&buf).unwrap();
+        let mut buf2 = vec![0u8; re.serialized_len()];
+        re.serialize_into(&mut buf2).unwrap();
         assert_eq!(buf, buf2, "byte-exact re-serialize");
         let re = RntSection::parse(&buf).unwrap();
         assert_eq!(re.resolution_providers.len(), 1);

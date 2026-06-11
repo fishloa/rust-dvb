@@ -11,7 +11,6 @@
 use crate::descriptors::DescriptorLoop;
 use crate::error::{Error, Result};
 use crate::text::{DvbText, LangCode};
-use crate::traits::Table;
 use dvb_common::{Parse, Serialize};
 
 /// `table_id` for Related Content Table.
@@ -28,9 +27,6 @@ const DESC_LOOP_LEN_FIELD: usize = 2;
 const CRC_LEN: usize = 4;
 const MIN_SECTION_LEN: usize =
     MIN_HEADER_LEN + EXTENSION_HEADER_LEN + POST_EXT_FIXED_LEN + DESC_LOOP_LEN_FIELD + CRC_LEN;
-
-const SECTION_B1_SSI: u8 = 0x80;
-const SECTION_B1_RESERVED: u8 = 0x30;
 
 const LINK_TYPE_MASK: u8 = 0xF0;
 const LINK_TYPE_SHIFT: u8 = 4;
@@ -236,8 +232,6 @@ pub struct RctSection<'a> {
     pub last_section_number: u8,
     /// `year_offset` — reference year.
     pub year_offset: u16,
-    /// Number of link entries (derived from `links.len()`).
-    pub link_count: u8,
     /// Link info entries — unfolded per Table 110.
     pub links: Vec<LinkInfo<'a>>,
     /// Trailing descriptor loop.
@@ -698,7 +692,6 @@ impl<'a> Parse<'a> for RctSection<'a> {
             section_number,
             last_section_number,
             year_offset,
-            link_count,
             links,
             descriptors,
         })
@@ -738,8 +731,10 @@ impl Serialize for RctSection<'_> {
         } else {
             0x00
         };
-        buf[1] =
-            SECTION_B1_SSI | tief_bit | SECTION_B1_RESERVED | ((section_length >> 8) as u8 & 0x0F);
+        buf[1] = super::SECTION_B1_SSI
+            | tief_bit
+            | super::SECTION_B1_RESERVED_HI
+            | ((section_length >> 8) as u8 & 0x0F);
         buf[2] = (section_length & 0xFF) as u8;
 
         buf[3..5].copy_from_slice(&self.service_id.to_be_bytes());
@@ -748,9 +743,9 @@ impl Serialize for RctSection<'_> {
         buf[7] = self.last_section_number;
         buf[8..10].copy_from_slice(&self.year_offset.to_be_bytes());
         if self.links.len() > u8::MAX as usize {
-            return Err(Error::OutputBufferTooSmall {
-                need: self.links.len(),
-                have: u8::MAX as usize,
+            return Err(Error::SectionLengthOverflow {
+                declared: self.links.len(),
+                available: u8::MAX as usize,
             });
         }
         buf[10] = self.links.len() as u8;
@@ -776,12 +771,6 @@ impl Serialize for RctSection<'_> {
         Ok(len)
     }
 }
-
-impl<'a> Table<'a> for RctSection<'a> {
-    const TABLE_ID: u8 = TABLE_ID;
-    const PID: u16 = PID;
-}
-
 impl<'a> crate::traits::TableDef<'a> for RctSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "RELATED_CONTENT";
@@ -801,7 +790,6 @@ mod tests {
             section_number: 0,
             last_section_number: 0,
             year_offset: 0x07D3,
-            link_count: 0,
             links: Vec::new(),
             descriptors: DescriptorLoop::new(&[]),
         };
@@ -837,7 +825,6 @@ mod tests {
             section_number: 1,
             last_section_number: 3,
             year_offset: 2003,
-            link_count: 1,
             links: vec![li],
             descriptors: DescriptorLoop::new(&[]),
         };
@@ -894,7 +881,6 @@ mod tests {
             section_number: 2,
             last_section_number: 5,
             year_offset: 2024,
-            link_count: 1,
             links: vec![li],
             descriptors: DescriptorLoop::new(&[]),
         };
@@ -939,14 +925,14 @@ mod tests {
             section_number: 0,
             last_section_number: 0,
             year_offset: 0x07D3,
-            link_count: 1,
             links: vec![li],
             descriptors: DescriptorLoop::new(&[]),
         };
         let mut buf = vec![0u8; rct.serialized_len()];
         rct.serialize_into(&mut buf).unwrap();
-        let mut buf2 = vec![0u8; rct.serialized_len()];
-        rct.serialize_into(&mut buf2).unwrap();
+        let parsed = RctSection::parse(&buf).unwrap();
+        let mut buf2 = vec![0u8; parsed.serialized_len()];
+        parsed.serialize_into(&mut buf2).unwrap();
         assert_eq!(buf, buf2);
     }
 
@@ -960,7 +946,6 @@ mod tests {
             section_number: 0,
             last_section_number: 0,
             year_offset: 2024,
-            link_count: 0,
             links: Vec::new(),
             descriptors: DescriptorLoop::new(&[]),
         };
@@ -991,7 +976,6 @@ mod tests {
             section_number: 0,
             last_section_number: 0,
             year_offset: 0,
-            link_count: 0,
             links: Vec::new(),
             descriptors: DescriptorLoop::new(&[]),
         };

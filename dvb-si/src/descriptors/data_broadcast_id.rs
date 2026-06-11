@@ -6,7 +6,6 @@
 
 use super::descriptor_body;
 use crate::error::{Error, Result};
-use crate::traits::Descriptor;
 use dvb_common::{Parse, Serialize};
 
 /// Descriptor tag for data_broadcast_id_descriptor.
@@ -80,14 +79,6 @@ impl Serialize for DataBroadcastIdDescriptor<'_> {
         Ok(len)
     }
 }
-
-impl<'a> Descriptor<'a> for DataBroadcastIdDescriptor<'a> {
-    const TAG: u8 = TAG;
-    fn descriptor_length(&self) -> u8 {
-        (ID_LEN + self.id_selector.len()) as u8
-    }
-}
-
 impl<'a> crate::traits::DescriptorDef<'a> for DataBroadcastIdDescriptor<'a> {
     const TAG: u8 = TAG;
     const NAME: &'static str = "DATA_BROADCAST_ID";
@@ -178,14 +169,13 @@ mod tests {
     #[cfg(feature = "serde")]
     #[test]
     fn serde_serialize_is_stable() {
-        // Borrowed `&[u8]` cannot be deserialized from a JSON array by
-        // serde_json; matching the borrowed-bytes descriptors in this crate we
-        // exercise the serialize path and assert it is deterministic.
         let d = DataBroadcastIdDescriptor {
             data_broadcast_id: 0x000B,
             id_selector: &[0x01, 0x02],
         };
         let json = serde_json::to_string(&d).unwrap();
-        assert_eq!(json, serde_json::to_string(&d.clone()).unwrap());
+        assert!(json.contains("\"data_broadcast_id\""));
+        assert!(json.contains("\"id_selector\""));
+        assert!(json.contains("11"));
     }
 }

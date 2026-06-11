@@ -7,7 +7,6 @@
 use super::descriptor_body;
 use crate::error::{Error, Result};
 use crate::text::{DvbText, LangCode};
-use crate::traits::Descriptor;
 use dvb_common::{Parse, Serialize};
 
 /// Descriptor tag for extended_event_descriptor.
@@ -17,6 +16,7 @@ const NUMBERS_LEN: usize = 1;
 const LANG_LEN: usize = 3;
 const ITEMS_LEN_FIELD: usize = 1;
 const TEXT_LEN_FIELD: usize = 1;
+const FIXED_PREFIX_LEN: usize = NUMBERS_LEN + LANG_LEN + ITEMS_LEN_FIELD + TEXT_LEN_FIELD;
 
 /// One (description, value) item — e.g. "Director" → "Alice Smith".
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,6 +63,13 @@ impl<'a> Parse<'a> for ExtendedEventDescriptor<'a> {
             "ExtendedEventDescriptor",
             "unexpected tag for extended_event_descriptor",
         )?;
+        if body.len() < FIXED_PREFIX_LEN {
+            return Err(Error::BufferTooShort {
+                need: FIXED_PREFIX_LEN,
+                have: body.len(),
+                what: "ExtendedEventDescriptor body",
+            });
+        }
         let numbers_byte = body[0];
         let descriptor_number = numbers_byte >> 4;
         let last_descriptor_number = numbers_byte & 0x0F;
@@ -185,14 +192,6 @@ impl Serialize for ExtendedEventDescriptor<'_> {
         Ok(len)
     }
 }
-
-impl<'a> Descriptor<'a> for ExtendedEventDescriptor<'a> {
-    const TAG: u8 = TAG;
-    fn descriptor_length(&self) -> u8 {
-        (self.serialized_len() - HEADER_LEN) as u8
-    }
-}
-
 impl<'a> crate::traits::DescriptorDef<'a> for ExtendedEventDescriptor<'a> {
     const TAG: u8 = TAG;
     const NAME: &'static str = "EXTENDED_EVENT";
@@ -330,5 +329,19 @@ mod tests {
         let mut buf = vec![0u8; parsed.serialized_len()];
         parsed.serialize_into(&mut buf).unwrap();
         assert_eq!(buf, bytes);
+    }
+
+    #[test]
+    fn parse_rejects_short_declared_body() {
+        // Declared length byte = 0, body is empty — must reject with
+        // BufferTooShort before indexing into it.
+        let bytes = &[0x4E, 0x00, 0, 0, 0, 0, 0, 0];
+        assert!(matches!(
+            ExtendedEventDescriptor::parse(bytes).unwrap_err(),
+            Error::BufferTooShort {
+                what: "ExtendedEventDescriptor body",
+                ..
+            }
+        ));
     }
 }

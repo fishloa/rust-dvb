@@ -8,7 +8,6 @@
 
 use crate::descriptors::DescriptorLoop;
 use crate::error::{Error, Result};
-use crate::traits::Table;
 use dvb_common::{Parse, Serialize};
 
 /// `table_id` for IP/MAC Notification Table.
@@ -280,12 +279,6 @@ impl Serialize for IntSection<'_> {
         Ok(len)
     }
 }
-
-impl<'a> Table<'a> for IntSection<'a> {
-    const TABLE_ID: u8 = TABLE_ID;
-    const PID: u16 = PID;
-}
-
 impl<'a> crate::traits::TableDef<'a> for IntSection<'a> {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "IP_MAC_NOTIFICATION";
@@ -374,10 +367,10 @@ mod tests {
         };
         let mut buf = vec![0u8; int.serialized_len()];
         int.serialize_into(&mut buf).unwrap();
-        let mut buf2 = vec![0u8; int.serialized_len()];
-        int.serialize_into(&mut buf2).unwrap();
-        assert_eq!(buf, buf2, "byte-exact re-serialize");
         let re = IntSection::parse(&buf).unwrap();
+        let mut buf2 = vec![0u8; re.serialized_len()];
+        re.serialize_into(&mut buf2).unwrap();
+        assert_eq!(buf, buf2, "byte-exact re-serialize");
         assert_eq!(re, int);
     }
 

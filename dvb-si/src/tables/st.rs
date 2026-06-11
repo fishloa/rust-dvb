@@ -6,7 +6,6 @@
 //! transponders). No CRC.
 
 use crate::error::{Error, Result};
-use crate::traits::Table;
 use dvb_common::{Parse, Serialize};
 
 /// table_id for Stuffing Table.
@@ -71,10 +70,9 @@ impl<'a> Parse<'a> for StSection {
         let payload_len = section_length as usize;
 
         if bytes.len() < HEADER_LEN + payload_len {
-            return Err(Error::BufferTooShort {
-                need: HEADER_LEN + payload_len,
-                have: bytes.len(),
-                what: "StSection payload",
+            return Err(Error::SectionLengthOverflow {
+                declared: payload_len,
+                available: bytes.len().saturating_sub(HEADER_LEN),
             });
         }
 
@@ -119,12 +117,6 @@ impl Serialize for StSection {
         Ok(len)
     }
 }
-
-impl<'a> Table<'a> for StSection {
-    const TABLE_ID: u8 = TABLE_ID;
-    const PID: u16 = PID;
-}
-
 impl<'a> crate::traits::TableDef<'a> for StSection {
     const TABLE_ID_RANGES: &'static [(u8, u8)] = &[(TABLE_ID, TABLE_ID)];
     const NAME: &'static str = "STUFFING";
@@ -237,17 +229,14 @@ mod tests {
         let bytes = [0x72, 0x70, 10, 0x00, 0x00];
         assert!(matches!(
             StSection::parse(&bytes).unwrap_err(),
-            Error::BufferTooShort {
-                what: "StSection payload",
-                ..
-            }
+            Error::SectionLengthOverflow { .. }
         ));
     }
 
     #[test]
     fn table_trait_constants() {
-        assert_eq!(<StSection as Table>::TABLE_ID, 0x72);
-        assert_eq!(<StSection as Table>::PID, 0x0014);
+        assert_eq!(TABLE_ID, 0x72);
+        assert_eq!(PID, 0x0014);
     }
 
     #[test]

@@ -6,7 +6,6 @@
 use super::descriptor_body;
 use crate::error::{Error, Result};
 use crate::text::{DvbText, LangCode};
-use crate::traits::Descriptor;
 use dvb_common::{Parse, Serialize};
 
 /// Descriptor tag for multilingual_bouquet_name_descriptor.
@@ -121,14 +120,6 @@ impl Serialize for MultilingualBouquetNameDescriptor<'_> {
         Ok(len)
     }
 }
-
-impl<'a> Descriptor<'a> for MultilingualBouquetNameDescriptor<'a> {
-    const TAG: u8 = TAG;
-    fn descriptor_length(&self) -> u8 {
-        (self.serialized_len() - HEADER_LEN) as u8
-    }
-}
-
 impl<'a> crate::traits::DescriptorDef<'a> for MultilingualBouquetNameDescriptor<'a> {
     const TAG: u8 = TAG;
     const NAME: &'static str = "MULTILINGUAL_BOUQUET_NAME";
@@ -241,9 +232,6 @@ mod tests {
     #[cfg(feature = "serde")]
     #[test]
     fn serde_serialize_is_stable() {
-        // Borrowed `&[u8]` cannot be deserialized from a JSON array by
-        // serde_json; matching the borrowed-bytes descriptors in this crate we
-        // exercise the serialize path and assert it is deterministic.
         let d = MultilingualBouquetNameDescriptor {
             entries: vec![BouquetNameEntry {
                 language_code: LangCode(*b"eng"),
@@ -251,6 +239,8 @@ mod tests {
             }],
         };
         let json = serde_json::to_string(&d).unwrap();
-        assert_eq!(json, serde_json::to_string(&d.clone()).unwrap());
+        assert!(json.contains("\"language_code\""));
+        assert!(json.contains("\"eng\""));
+        assert!(json.contains("\"Sky\""));
     }
 }
