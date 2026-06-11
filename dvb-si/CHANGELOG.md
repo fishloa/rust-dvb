@@ -5,6 +5,12 @@
 The SI **output half** — the crate can now emit a transport stream, not just
 parse one (#56).
 
+### Changed
+- `ca_system_name` / `private_data_specifier_name` lookups are now generated at
+  build time from vendored TSDuck `.names` data (#141) — same
+  `Option<&'static str>` signature, fuller + drift-free coverage, attribution in
+  `registries/README.md`.
+
 ### Added
 - **`mux::SectionPacketizer`** (#56, feature `ts`) — packs serialized PSI/SI
   sections into 188-byte TS packets: PUSI + `pointer_field` placement, section

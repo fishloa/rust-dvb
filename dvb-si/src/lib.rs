@@ -165,6 +165,7 @@ pub mod descriptors;
 pub mod epg;
 pub mod error;
 pub mod pid;
+mod registry_names;
 pub mod resync;
 pub mod section;
 pub mod table_id;

@@ -13,26 +13,11 @@ const HEADER_LEN: usize = 2;
 const MIN_BODY_LEN: usize = 4; // ca_system_id (2) + ca_pid (2)
 
 /// Best-effort, non-exhaustive mapping from CA system ID to a human-readable
-/// name.  Verified ranges from the DVB Services registry.
+/// name.  Generated at build time from vendored TSDuck `.names` data
+/// (`registries/tsCAS.names`); attribution in `registries/README.md`.
 #[must_use]
 pub fn ca_system_name(ca_system_id: u16) -> Option<&'static str> {
-    match ca_system_id {
-        0x0100..=0x01FF => Some("Seca / Mediaguard"),
-        0x0500..=0x05FF => Some("Viaccess"),
-        0x0600..=0x06FF => Some("Irdeto"),
-        0x0700..=0x07FF => Some("DigiCipher 2"),
-        0x0900..=0x09FF => Some("NDS / Videoguard"),
-        0x0B00..=0x0BFF => Some("Conax"),
-        0x0D00..=0x0DFF => Some("Cryptoworks"),
-        0x0E00..=0x0EFF => Some("PowerVu"),
-        0x1700..=0x17FF => Some("Verimatrix (BetaCrypt)"),
-        0x1800..=0x18FF => Some("Nagravision"),
-        0x2600..=0x26FF => Some("BISS"),
-        0x4AD4..=0x4AD5 => Some("Widevine"),
-        0x4AE0..=0x4AE1 => Some("DRE-Crypt"),
-        0x5601..=0x5604 => Some("Verimatrix VCAS"),
-        _ => None,
-    }
+    crate::registry_names::ca_system_name_generated(ca_system_id)
 }
 
 /// Conditional Access Descriptor.
@@ -46,21 +31,8 @@ pub fn ca_system_name(ca_system_id: u16) -> Option<&'static str> {
 pub struct CaDescriptor<'a> {
     /// Conditional Access System ID.
     ///
-    /// Well-known CAID ranges (DVB Services registry):
-    ///   0x0100–0x01FF  Seca / Mediaguard
-    ///   0x0500–0x05FF  Viaccess
-    ///   0x0600–0x06FF  Irdeto
-    ///   0x0700–0x07FF  DigiCipher 2
-    ///   0x0900–0x09FF  NDS / Videoguard
-    ///   0x0B00–0x0BFF  Conax
-    ///   0x0D00–0x0DFF  Cryptoworks
-    ///   0x0E00–0x0EFF  PowerVu
-    ///   0x1700–0x17FF  Verimatrix (BetaCrypt)
-    ///   0x1800–0x18FF  Nagravision
-    ///   0x2600–0x26FF  BISS
-    ///   0x4AD4–0x4AD5  Widevine
-    ///   0x4AE0–0x4AE1  DRE-Crypt
-    ///   0x5601–0x5604  Verimatrix VCAS
+    /// See [`ca_system_name`] for a best-effort human-readable name built
+    /// from the TSDuck registry (`registries/tsCAS.names`).
     pub ca_system_id: u16,
 
     /// PID carrying ECM/EMM data for this CA system.
@@ -235,35 +207,26 @@ mod tests {
     }
 
     #[test]
-    fn ca_system_name_verified_ranges() {
-        assert_eq!(ca_system_name(0x0100), Some("Seca / Mediaguard"));
-        assert_eq!(ca_system_name(0x01FF), Some("Seca / Mediaguard"));
-        assert_eq!(ca_system_name(0x0500), Some("Viaccess"));
-        assert_eq!(ca_system_name(0x05FF), Some("Viaccess"));
-        assert_eq!(ca_system_name(0x0600), Some("Irdeto"));
-        assert_eq!(ca_system_name(0x0700), Some("DigiCipher 2"));
-        assert_eq!(ca_system_name(0x0900), Some("NDS / Videoguard"));
-        assert_eq!(ca_system_name(0x0B00), Some("Conax"));
-        assert_eq!(ca_system_name(0x0D00), Some("Cryptoworks"));
-        assert_eq!(ca_system_name(0x0E00), Some("PowerVu"));
-        assert_eq!(ca_system_name(0x1700), Some("Verimatrix (BetaCrypt)"));
-        assert_eq!(ca_system_name(0x1800), Some("Nagravision"));
-        assert_eq!(ca_system_name(0x2600), Some("BISS"));
-        assert_eq!(ca_system_name(0x4AD4), Some("Widevine"));
-        assert_eq!(ca_system_name(0x4AE0), Some("DRE-Crypt"));
-        assert_eq!(ca_system_name(0x5601), Some("Verimatrix VCAS"));
+    fn ca_system_name_exact_entry() {
+        // Exact entry from tsCAS.names [CASystemId].
+        assert_eq!(
+            ca_system_name(0x0001),
+            Some("IPDC SPP Open Security Framework Generic Roaming")
+        );
+        assert_eq!(ca_system_name(0x004E), None);
     }
 
     #[test]
-    fn ca_system_name_removed_entries_return_none() {
-        assert_eq!(ca_system_name(0x0000), None);
-        assert_eq!(ca_system_name(0x5605), None);
-        assert_eq!(ca_system_name(0x4AE2), None);
-        assert_eq!(ca_system_name(0x0F00), None);
+    fn ca_system_name_range_entry() {
+        // Range entry 0x0100..=0x01FF => "MediaGuard" from tsCAS.names.
+        assert_eq!(ca_system_name(0x0100), Some("MediaGuard"));
+        assert_eq!(ca_system_name(0x01FF), Some("MediaGuard"));
     }
 
     #[test]
     fn ca_system_name_unknown() {
-        assert_eq!(ca_system_name(0xdead), None);
+        assert_eq!(ca_system_name(0x0000), None);
+        assert_eq!(ca_system_name(0x0003), None);
+        assert_eq!(ca_system_name(0xDEAD), None);
     }
 }
