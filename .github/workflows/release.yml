@@ -32,7 +32,7 @@ jobs:
       - name: Gate — tag matches crate versions
         run: |
           TAG="${GITHUB_REF_NAME#v}"
-          for c in dvb-common dvb-si dvb-t2mi dvb-bbframe; do
+          for c in dvb-common dvb-si dvb-t2mi dvb-bbframe dvb-tools; do
             V=$(cargo metadata --no-deps --format-version 1 --locked \
                 | python3 -c "import json,sys; print({p['name']: p['version'] for p in json.load(sys.stdin)['packages']}['$c'])")
             if [ "$V" != "$TAG" ]; then
@@ -43,8 +43,10 @@ jobs:
       # Dependency order (topological): dvb-common has no workspace deps and
       # must go first. dvb-si and dvb-bbframe each depend only on dvb-common.
       # dvb-t2mi depends on dvb-common AND (optionally, ts-gated) dvb-bbframe,
-      # so it must publish LAST — after dvb-bbframe is on the index. Hence:
-      #   common → bbframe → si → t2mi.
+      # so it must publish after dvb-bbframe is on the index.
+      # dvb-tools depends on both dvb-si (ts + serde + chrono) and dvb-t2mi (ts),
+      # so it publishes LAST. Hence:
+      #   common → bbframe → si → t2mi → tools.
       # The index can lag a few seconds after a publish; `cargo publish` blocks
       # until the published crate is available since Cargo 1.66, so no manual
       # sleep is needed.
@@ -75,5 +77,6 @@ jobs:
           publish_crate dvb-bbframe
           publish_crate dvb-si
           publish_crate dvb-t2mi
+          publish_crate dvb-tools
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

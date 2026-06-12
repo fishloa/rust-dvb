@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+- The `si_dump` example has moved into the new `dvb-tools` binary crate as
+  `dvb-tools dump` (#59). The example file and its `[[example]]` manifest
+  entry are removed; behaviour is unchanged.
+
 ## 6.1.0 — 2026-06-12
 
 The SI **output half** — the crate can now emit a transport stream, not just

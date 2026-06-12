@@ -46,8 +46,3 @@ serde    = ["dep:serde", "dep:erased-serde", "chrono?/serde"]
 # parsed table/descriptor can be retained past the input buffer's borrow
 # (store/cache/send across threads) without re-parsing or a mirror type.
 yoke     = ["dep:yoke"]
-
-# si_dump: demux a .ts (feature `ts`) and emit decoded JSON (feature `serde`).
-[[example]]
-name              = "si_dump"
-required-features = ["ts", "serde"]

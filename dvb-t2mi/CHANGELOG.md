@@ -7,6 +7,14 @@
   per-PLP filter on the recovery driver; only BBFrames matching the target
   PLP are decoded. `filtered_bbframes()` reports how many were skipped.
 
+### Changed
+- The `t2mi_dump` example has moved into the new `dvb-tools` binary crate as
+  `dvb-tools t2mi` (#59). The example file and its `[[example]]` manifest
+  entry are removed; behaviour with `--pid 0xNNN|raw` is unchanged. The same
+  CLI additionally exposes `--inner` (chain-unwrap to inner MPEG-TS via
+  `InnerTsRecovery`) and `--plp` (per-PLP filter that uses
+  `InnerTsRecovery::new_for_plp`).
+
 ## [6.1.0] — 2026-06-12
 
 Version-lockstep release with the workspace. No changes to this crate (the #55a

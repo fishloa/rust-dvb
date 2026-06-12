@@ -22,7 +22,8 @@
 //!
 //! // In real code, `packet` is each aligned 188-byte packet from your TS source
 //! // (file, UDP, tuner). Here we hand-build one PAT packet to keep the doctest
-//! // self-contained — see `examples/si_dump.rs` for the file-reading loop.
+//! // self-contained — see `dvb-tools dump` (in the `dvb-tools` crate) for the
+//! // file-reading loop.
 //! # let packet = build_pat_packet();
 //! for event in demux.feed(&packet) {
 //!     match event.table_section() {
