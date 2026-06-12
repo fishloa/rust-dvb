@@ -29,10 +29,14 @@ jobs:
         run: cargo build --workspace --all-features --locked
       - name: Test (all features)
         run: cargo test --workspace --all-features --locked
+      # Exclude dvb-tools here: it is a binary that requires dvb-si's
+      # ts/serde/chrono and dvb-t2mi's ts features, and including it would
+      # (via workspace feature unification) force those features on and mask
+      # a regression in the libraries' bare --no-default-features build.
       - name: Build (no default features)
-        run: cargo build --workspace --no-default-features --locked
+        run: cargo build --workspace --exclude dvb-tools --no-default-features --locked
       - name: Test (no default features)
-        run: cargo test --workspace --no-default-features --locked
+        run: cargo test --workspace --exclude dvb-tools --no-default-features --locked
 
   lint:
     name: clippy

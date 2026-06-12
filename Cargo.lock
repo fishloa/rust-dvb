@@ -116,6 +116,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dvb-tools"
+version = "6.1.0"
+dependencies = [
+ "dvb-si",
+ "dvb-t2mi",
+ "serde_json",
+]
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"

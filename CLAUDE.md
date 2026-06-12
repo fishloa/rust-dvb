@@ -30,10 +30,11 @@ cargo test -p dvb-si --all-features                # one crate
 cargo test -p dvb-si --test round_trip             # one integration test file
 cargo test -p dvb-si descriptors::pdc              # tests matching a path
 
-# Examples (debug CLIs):
-cargo run -p dvb-si --example si_dump -- dvb-si/tests/fixtures/m6-single.ts
-cargo run -p dvb-si --example si_dump -- dvb-si/tests/fixtures/m6-single.ts --json
-cargo run -p dvb-t2mi --example t2mi_dump -- <file.ts> [--pid 0xNNN|raw]
+# Analyzer CLI (the dvb-tools binary crate):
+cargo run -p dvb-tools -- dump dvb-si/tests/fixtures/m6-single.ts
+cargo run -p dvb-tools -- dump dvb-si/tests/fixtures/m6-single.ts --json
+cargo run -p dvb-tools -- t2mi <file.ts> [--pid 0xNNN|raw] [--inner] [--plp N]
+cargo run -p dvb-tools -- services|epg|pids <file.ts>
 ```
 
 Formatting is rustfmt-clean and CI-gated (`cargo fmt --all --check`). The deliberately column-aligned enums (`TableId`, `DescriptorTag`) carry `#[rustfmt::skip]` — keep the attribute (and the alignment) when editing them, and use the same pattern for any new aligned table. Cargo.toml manifests keep their manual column alignment (rustfmt doesn't touch them).
@@ -106,9 +107,9 @@ type: implement the module + the `*Def` trait, then add one line to the macro
 invocation — the integration completeness test walks the generated set
 automatically.
 
-The runnable debug CLIs (`dvb-si/examples/si_dump.rs`,
-`dvb-t2mi/examples/t2mi_dump.rs`) wire the pump → dispatch → decode story together
-with no new dependencies (plain `std::env::args`).
+The runnable analyzer CLI (the `dvb-tools` binary crate — `dump` / `services` /
+`epg` / `pids` / `t2mi` subcommands) wires the pump → dispatch → decode story
+together with no new dependencies (plain `std::env::args`).
 
 ### Spec grounding (the project's defining discipline)
 

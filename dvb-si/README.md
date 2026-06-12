@@ -290,8 +290,8 @@ for packet in ts_packets {                      // each aligned 188-byte packet
 }
 ```
 
-See [`examples/si_dump.rs`](examples/si_dump.rs) for a complete file-reading CLI
-(`cargo run -p dvb-si --example si_dump -- file.ts [--json]`).
+See [`dvb-tools dump`](../dvb-tools/) for a complete file-reading CLI
+(`cargo run -p dvb-tools -- dump file.ts [--json]`).
 
 ## Typed dispatch
 

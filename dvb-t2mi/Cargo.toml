@@ -39,8 +39,3 @@ serde   = ["dep:serde", "dep:erased-serde"]
 # yoke::Yokeable on the zero-copy payload view types (mirrors dvb-si's `yoke`
 # feature) — own a parsed T2-MI payload past the input buffer's borrow.
 yoke    = ["dep:yoke"]
-
-# t2mi_dump: pump a TS/T2-MI stream (feature `ts` for feed_ts).
-[[example]]
-name              = "t2mi_dump"
-required-features = ["ts"]

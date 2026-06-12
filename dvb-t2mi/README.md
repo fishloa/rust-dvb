@@ -90,8 +90,11 @@ for packet in ts_packets {                       // each aligned 188-byte packet
 ```
 
 For un-encapsulated `.t2mi` byte streams use `T2miPump::raw()` + `feed_raw`. The
-[`t2mi_dump`](examples/t2mi_dump.rs) example is a complete CLI
-(`cargo run -p dvb-t2mi --example t2mi_dump -- file.ts [--pid 0xNNN|raw]`).
+[`dvb-tools t2mi`](../dvb-tools/) CLI is the complete wrapper
+(`cargo run -p dvb-tools -- t2mi file.ts [--pid 0xNNN|raw] [--inner] [--plp N]`):
+without `--inner` it pumps T2-MI; with `--inner` it chain-unwraps to the
+inner MPEG-TS and writes the recovered 188-byte packets to stdout (additionally
+accepts `--plp` to target one baseband frame's PLP).
 
 ### Private / custom packet types
 

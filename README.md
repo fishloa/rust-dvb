@@ -23,21 +23,22 @@ feed all the way down to a service name string.
 | [`dvb-t2mi`](dvb-t2mi/) | [![crates.io](https://img.shields.io/crates/v/dvb-t2mi.svg)](https://crates.io/crates/dvb-t2mi) | [![docs.rs](https://img.shields.io/docsrs/dvb-t2mi)](https://docs.rs/dvb-t2mi) | ETSI TS 102 773 DVB-T2 Modulator Interface (T2-MI): all 12 packet types + a feed-and-iterate pump. |
 | [`dvb-bbframe`](dvb-bbframe/) | [![crates.io](https://img.shields.io/crates/v/dvb-bbframe.svg)](https://crates.io/crates/dvb-bbframe) | [![docs.rs](https://img.shields.io/docsrs/dvb-bbframe)](https://docs.rs/dvb-bbframe) | DVB-S2 / S2X / T2 BBFRAME headers (MATYPE/UPL/DFL/SYNCD) + user-packet extraction. |
 | [`dvb-common`](dvb-common/) | [![crates.io](https://img.shields.io/crates/v/dvb-common.svg)](https://crates.io/crates/dvb-common) | [![docs.rs](https://img.shields.io/docsrs/dvb-common)](https://docs.rs/dvb-common) | The shared `Parse` / `Serialize` traits and CRC-32/MPEG-2 that everything builds on. |
+| [`dvb-tools`](dvb-tools/) | [![crates.io](https://img.shields.io/crates/v/dvb-tools.svg)](https://crates.io/crates/dvb-tools) | [![docs.rs](https://img.shields.io/docsrs/dvb-tools)](https://docs.rs/dvb-tools) | Command-line analyzer over the family: `dump` / `services` / `epg` / `pids` / `t2mi`. |
 
 For GSE, see the existing [`dvb-gse`](https://crates.io/crates/dvb-gse) crate.
 
 ## Quickstart
 
 Demux a `.ts` capture and print its SI sections — the
-[`si_dump`](dvb-si/examples/si_dump.rs) example, in full:
+[`dvb-tools dump`](dvb-tools/) CLI:
 
 ```console
-$ cargo run -p dvb-si --example si_dump -- dvb-si/tests/fixtures/m6-single.ts
+$ cargo run -p dvb-tools -- dump dvb-si/tests/fixtures/m6-single.ts
 pid=0x0000 PROGRAM_ASSOCIATION v0 sn=0
 pid=0x0064 PROGRAM_MAP v1 sn=0
 -- packets=1264 sections=47 emitted=3 suppressed=44 crc_failures=0 malformed=0
 
-$ cargo run -p dvb-si --example si_dump -- dvb-si/tests/fixtures/m6-single.ts --json
+$ cargo run -p dvb-tools -- dump dvb-si/tests/fixtures/m6-single.ts --json
 {
   "pat": {
     "transport_stream_id": 1,

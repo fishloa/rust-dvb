@@ -1,24 +1,19 @@
-//! `si_dump` — demux a `.ts` capture and print the SI tables it carries.
+//! `dvb-tools dump <file.ts> [--json]` — SI section dump.
 //!
-//! Usage:
+//! Drives [`SiDemux`] over an aligned 188-byte `.ts` capture and prints one
+//! line per emitted (changed) section. With `--json`, the decoded typed table
+//! for each section is pretty-printed via `serde_json`.
 //!
-//! ```text
-//! cargo run -p dvb-si --example si_dump -- <file.ts> [--json]
-//! ```
-//!
-//! Default: one line per emitted (changed) section, e.g.
-//! `pid=0x0012 EVENT_INFORMATION v3 sn=0`. With `--json`: the decoded typed
-//! table for each section, pretty-printed (requires the `serde` feature, on by
-//! default). A stats summary is printed at the end.
-
+//! Behaviour is identical to the former `dvb-si/examples/si_dump.rs`.
 use std::process::ExitCode;
 
 use dvb_si::demux::SiDemux;
 use dvb_si::tables::AnyTableSection;
-use dvb_si::ts::TS_PACKET_SIZE;
 
-/// Label for an `AnyTableSection` — the macro-generated `name()`, with the table_id
-/// appended for unknowns.
+use crate::util::{for_each_packet, read_file};
+
+/// Label for an `AnyTableSection` — the macro-generated `name()`, with the
+/// `table_id` appended for unknowns.
 fn table_name(table: &AnyTableSection<'_>) -> String {
     match table {
         AnyTableSection::Unknown { table_id, .. } => format!("UNKNOWN(0x{table_id:02X})"),
@@ -26,19 +21,19 @@ fn table_name(table: &AnyTableSection<'_>) -> String {
     }
 }
 
-fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().collect();
+/// `dvb-tools dump <file.ts> [--json]` — returns success on a clean run.
+pub fn run(args: &[String]) -> ExitCode {
     let mut path: Option<String> = None;
     let mut json = false;
-    for arg in &args[1..] {
+    for arg in args {
         match arg.as_str() {
             "--json" => json = true,
             "-h" | "--help" => {
-                eprintln!("usage: si_dump <file.ts> [--json]");
+                eprintln!("usage: dvb-tools dump <file.ts> [--json]");
                 return ExitCode::SUCCESS;
             }
             other if other.starts_with('-') => {
-                eprintln!("si_dump: unknown option {other}");
+                eprintln!("dvb-tools dump: unknown option {other}");
                 return ExitCode::FAILURE;
             }
             other => path = Some(other.to_string()),
@@ -46,30 +41,26 @@ fn main() -> ExitCode {
     }
 
     let Some(path) = path else {
-        eprintln!("usage: si_dump <file.ts> [--json]");
+        eprintln!("usage: dvb-tools dump <file.ts> [--json]");
         return ExitCode::FAILURE;
     };
 
-    let data = match std::fs::read(&path) {
+    let data = match read_file(&path, "dvb-tools dump") {
         Ok(d) => d,
-        Err(e) => {
-            eprintln!("si_dump: {path}: {e}");
-            return ExitCode::FAILURE;
-        }
+        Err(code) => return code,
     };
 
     let mut demux = SiDemux::builder().build();
-    for chunk in data.chunks(TS_PACKET_SIZE) {
-        if chunk.len() != TS_PACKET_SIZE || chunk[0] != 0x47 {
-            continue; // skip non-aligned / short tail
-        }
-        for event in demux.feed(chunk) {
+    for packet in for_each_packet(&data) {
+        for event in demux.feed(packet) {
             match event.table_section() {
                 Ok(table) => {
                     if json {
                         match serde_json::to_string_pretty(&table) {
                             Ok(s) => println!("{s}"),
-                            Err(e) => eprintln!("si_dump: serialize {}: {e}", event.pid()),
+                            Err(e) => {
+                                eprintln!("dvb-tools dump: serialize {}: {e}", event.pid());
+                            }
                         }
                     } else {
                         let name = table_name(&table);
@@ -81,8 +72,6 @@ fn main() -> ExitCode {
                             ),
                             None => println!("pid={} {name}", event.pid()),
                         }
-                        // Decoded summary — the 6.0 typed-enum accessors turn raw
-                        // wire codes into spec names with no lookup table.
                         match &table {
                             AnyTableSection::PmtSection(pmt) => {
                                 for st in &pmt.streams {
