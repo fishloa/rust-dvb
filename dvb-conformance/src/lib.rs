@@ -525,14 +525,12 @@ impl ConformanceMonitor {
             self.bad_run = 0;
             if !self.in_sync && self.good_run >= self.config.sync_acquire_packets {
                 self.in_sync = true;
-                self.stats.in_sync = true;
             }
         } else {
             self.bad_run = self.bad_run.saturating_add(1);
             self.good_run = 0;
             if self.in_sync && self.bad_run >= self.config.sync_loss_packets {
                 self.in_sync = false;
-                self.stats.in_sync = false;
                 self.emit(
                     Indicator::TsSyncLoss,
                     None,
@@ -605,6 +603,11 @@ impl ConformanceMonitor {
         }
 
         // ── 2.6 CAT_error — scrambled packet with no CAT (Table 5.0b 2.6)
+        //
+        // At stream start, scrambled packets may arrive before a CAT section
+        // has been acquired; this check fires once in that case. It re-arms
+        // (see `check_cat_table_id`) when a CAT later appears, so the error is
+        // re-detectable after a CAT section is seen.
         if header.scrambling != 0 && !self.cat_seen && !self.scrambled_without_cat_reported {
             self.scrambled_without_cat_reported = true;
             self.emit(
@@ -711,7 +714,10 @@ impl ConformanceMonitor {
 
     /// Diagnostic counters.
     pub fn stats(&self) -> Stats {
-        self.stats
+        Stats {
+            in_sync: self.in_sync,
+            ..self.stats
+        }
     }
 
     // ── Internal helpers ──────────────────────────────────────────────────

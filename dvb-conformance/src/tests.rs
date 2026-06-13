@@ -354,16 +354,21 @@ fn ts_sync_loss_not_emitted_while_in_sync() {
 #[test]
 fn cc_error_trips_on_jump() {
     let mut monitor = ConformanceMonitor::new();
+    acquire_sync(&mut monitor);
 
-    for i in 0u8..5 {
-        let pkt = make_ts_packet(0x100, i, false, false, &[], &[]);
-        monitor.feed(&pkt, ms(i as u64));
-    }
+    // Establish a payload-bearing run on a fresh PID with correctly incrementing
+    // continuity counters: 0 → 1 must NOT trip (control).
+    let init = make_ts_packet(0x200, 0, false, false, &[], &[0xAB]);
+    monitor.feed(&init, ms(5));
+    let ok = make_ts_packet(0x200, 1, false, false, &[], &[0xAB]);
+    assert!(
+        !has_indicator(monitor.feed(&ok, ms(6)), Indicator::ContinuityCountError),
+        "a correct +1 increment on a payload packet must not trip"
+    );
 
-    let pkt1 = make_ts_packet(0x100, 3, false, false, &[], &[]);
-    let pkt2 = make_ts_packet(0x100, 5, false, false, &[], &[]);
-    monitor.feed(&pkt1, ms(5));
-    let events = monitor.feed(&pkt2, ms(6));
+    // Now a genuine jump on a payload packet: last_cc = 1, expected 2, got 5.
+    let jump = make_ts_packet(0x200, 5, false, false, &[], &[0xAB]);
+    let events = monitor.feed(&jump, ms(7));
     assert!(has_indicator(events, Indicator::ContinuityCountError));
 }
 
@@ -902,42 +907,48 @@ fn cat_error_scrambled_without_cat() {
     assert!(has_indicator(events, Indicator::CatError));
 }
 
+/// Build a CRC-valid minimal CAT section (table_id 0x01, empty descriptor
+/// loop). Long-form: 3-byte header + table_id_extension(2) + version/cni(1) +
+/// section_number(1) + last_section_number(1) + CRC-32/MPEG-2(4) = 12 bytes.
+fn build_valid_cat_section() -> Vec<u8> {
+    let mut cat = vec![
+        0x01, // table_id = CAT
+        0xB0, 0x09, // ssi=1, '0', reserved=11, section_length=9
+        0xFF, 0xFF, // table_id_extension (reserved for CAT)
+        0xC1, // reserved=11, version=0, current_next_indicator=1
+        0x00, // section_number
+        0x00, // last_section_number
+    ];
+    let crc = dvb_common::crc32_mpeg2::compute(&cat);
+    cat.extend_from_slice(&crc.to_be_bytes());
+    cat
+}
+
 #[test]
 fn cat_error_absent_when_cat_seen_then_scrambled() {
     let mut monitor = ConformanceMonitor::new();
-
     acquire_sync(&mut monitor);
 
-    // Feed a valid CAT section on PID 0x0001 (table_id = 0x01).
-    // Reuse the PAT section builder but set table_id to CAT.
-    let mut cat_section = build_pat_section(&[]);
-    cat_section[0] = 0x01; // CAT table_id
-                           // We need to fix the CRC after changing table_id.
-                           // Instead, build a minimal valid section manually: table_id(1) +
-                           // section_syntax(1) + reserved(2) + section_length(12) +
-                           // extension(2) + version/cni(1) + sec_num(1) + last_sec_num(1) +
-                           // CRC(4) = 12 bytes.
-                           // Actually, use the SectionPacketizer's packetize on the mutated section.
-                           // The CRC will be wrong but that's fine — the monitor checks table_id
-                           // before CRC. We just need the table_id to be 0x01.
-    let packets = packetize_section(PID_CAT, &cat_section);
-    feed_all(&mut monitor, &packets, ms(5), ms(1));
-    // The CAT section with wrong CRC will trigger CrcError but also set
-    // cat_seen because table_id is 0x01. Actually let me reconsider...
-    // check_cat_table_id is called before check_crc_for_si.
-    // Wait, no — check_crc_for_si and check_cat_table_id are called in sequence
-    // after section completion. Both are called. The CAT table_id check
-    // should set cat_seen = true even if the CRC is wrong.
-    // Let me verify by checking that cat_seen gets set.
+    // Feed a CRC-VALID CAT section on PID 0x0001 — this must mark the CAT as
+    // seen (and must NOT itself raise a CRC error).
+    let packets = packetize_section(PID_CAT, &build_valid_cat_section());
+    let cat_events = feed_all(&mut monitor, &packets, ms(5), ms(1));
+    assert!(
+        !has_indicator(&cat_events, Indicator::CrcError),
+        "a CRC-valid CAT must not raise CRC_error"
+    );
+    assert!(
+        !has_indicator(&cat_events, Indicator::CatError),
+        "a valid CAT on PID 0x0001 must not raise CAT_error"
+    );
 
-    // Feed a scrambled packet — should NOT trigger CatError now that CAT is seen.
+    // Now a scrambled packet arrives — because a CAT has been seen, the
+    // "scrambled packet but no CAT" condition (2.6) must NOT fire.
     let pkt = make_ts_packet_with_scrambling(0x0100, 0, 0x03);
     let events = monitor.feed(&pkt, ms(10));
     assert!(
-        !events
-            .iter()
-            .any(|e| e.indicator == Indicator::CatError && e.detail.contains("no CAT seen")),
-        "CatError 'no CAT' should not fire after CAT section seen"
+        !has_indicator(events, Indicator::CatError),
+        "CAT_error must not fire for a scrambled packet once a CAT has been seen"
     );
 }
 
