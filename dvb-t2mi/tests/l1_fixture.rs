@@ -111,4 +111,14 @@ fn l1_current_fixture_oracle() {
         l1_data.len(),
         "framing byte totals must equal l1_current_data length"
     );
+
+    // ── BYTE-EXACT ROUND-TRIP (the strongest oracle) ───────────────────────────
+    // Reserialize L1PRE (21 bytes) + the framed L1-post and require it to
+    // reproduce the original 67 wire bytes exactly.
+    let mut reser = pre.to_bytes().to_vec();
+    reser.extend_from_slice(&post.to_l1_current_framed().expect("framed serialize"));
+    assert_eq!(
+        reser, l1_data,
+        "parse→serialize of the real L1-current data must be byte-identical"
+    );
 }

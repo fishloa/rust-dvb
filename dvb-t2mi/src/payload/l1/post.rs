@@ -660,44 +660,82 @@ impl L1PostDynamic {
 
 // ── L1ExtBlock ────────────────────────────────────────────────────────────────
 
+const L1_EXT_BLOCK_TYPE_BITS: u32 = 8;
+const L1_EXT_DATA_LEN_BITS: u32 = 16;
+
 /// One extension block — EN 302 755 §7.2.3.4, Table 37.
+///
+/// Within the L1EXT region the blocks are bit-contiguous (a block's data is
+/// `data_bit_len` bits, not byte-padded); only the whole region is zero-padded
+/// to a byte boundary. `data` holds `ceil(data_bit_len/8)` bytes, MSB-first,
+/// with the final byte zero-padded in its low bits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct L1ExtBlock {
     /// L1_EXT_BLOCK_TYPE (8 bits, Table 38).
     pub block_type: u8,
-    /// L1_EXT_BLOCK_DATA (variable, length given by L1_EXT_DATA_LEN in bits).
+    /// L1_EXT_DATA_LEN — length of `data` in bits (16-bit wire field).
+    pub data_bit_len: u16,
+    /// L1_EXT_BLOCK_DATA — `ceil(data_bit_len/8)` bytes, MSB-first.
     pub data: Vec<u8>,
 }
 
-/// Parse all extension blocks from `bytes` (the zero-padded L1EXT region).
+impl L1ExtBlock {
+    /// Bits this block occupies in the L1EXT region (header + data, no padding).
+    fn bits(&self) -> usize {
+        (L1_EXT_BLOCK_TYPE_BITS + L1_EXT_DATA_LEN_BITS) as usize + self.data_bit_len as usize
+    }
+
+    fn parse(r: &mut BitReader<'_>) -> crate::error::Result<Self> {
+        let block_type = r.read_bits(L1_EXT_BLOCK_TYPE_BITS)? as u8;
+        let data_bit_len = r.read_bits(L1_EXT_DATA_LEN_BITS)? as u16;
+        let n = data_bit_len as usize;
+        let mut data = vec![0u8; n.div_ceil(8)];
+        let mut done = 0usize;
+        for byte in data.iter_mut() {
+            let take = (n - done).min(8) as u32;
+            let v = r.read_bits(take)? as u8;
+            // MSB-first: a short final field sits in the high bits.
+            *byte = if take < 8 { v << (8 - take) } else { v };
+            done += take as usize;
+        }
+        Ok(Self {
+            block_type,
+            data_bit_len,
+            data,
+        })
+    }
+
+    fn write(&self, w: &mut BitWriter<'_>) -> crate::error::Result<()> {
+        w.write_bits(u64::from(self.block_type), L1_EXT_BLOCK_TYPE_BITS)?;
+        w.write_bits(u64::from(self.data_bit_len), L1_EXT_DATA_LEN_BITS)?;
+        let n = self.data_bit_len as usize;
+        let mut done = 0usize;
+        for &byte in &self.data {
+            let take = (n - done).min(8) as u32;
+            let v = if take < 8 {
+                u64::from(byte >> (8 - take))
+            } else {
+                u64::from(byte)
+            };
+            w.write_bits(v, take)?;
+            done += take as usize;
+        }
+        Ok(())
+    }
+}
+
+/// Parse the extension blocks filling the first `total_bits` of `bytes`.
 ///
-/// Reads until the remaining bits can no longer hold another block header
-/// (24 bits minimum).
-fn parse_ext_blocks(bytes: &[u8]) -> crate::error::Result<Vec<L1ExtBlock>> {
+/// Blocks are bit-contiguous; the loop stops when fewer than a block header
+/// (24 bits) of declared content remains (the trailing zero-pad is < 8 bits).
+fn parse_ext_blocks(bytes: &[u8], total_bits: usize) -> crate::error::Result<Vec<L1ExtBlock>> {
     let mut r = BitReader::new(bytes);
+    let header_bits = (L1_EXT_BLOCK_TYPE_BITS + L1_EXT_DATA_LEN_BITS) as usize;
     let mut blocks = Vec::new();
-    // Each block needs at least 24 bits: 8 (type) + 16 (len)
-    while r.bits_remaining() >= 24 {
-        let block_type = r.read_bits(8)? as u8;
-        let data_len_bits = r.read_bits(16)? as usize;
-        let data_bytes = data_len_bits.div_ceil(8);
-        // Check there are enough bits left
-        if r.bits_remaining() < data_len_bits {
-            break;
-        }
-        let mut data = vec![0u8; data_bytes];
-        for (i, byte) in data.iter_mut().enumerate().take(data_bytes) {
-            let remaining = data_len_bits.saturating_sub(i * 8);
-            let bits = remaining.min(8) as u32;
-            *byte = r.read_bits(bits)? as u8;
-            if bits < 8 {
-                // shift into high bits (MSB-first convention)
-                *byte <<= 8 - bits;
-            }
-        }
-        blocks.push(L1ExtBlock { block_type, data });
+    while r.bits_read() + header_bits <= total_bits {
+        blocks.push(L1ExtBlock::parse(&mut r)?);
     }
     Ok(blocks)
 }
@@ -721,6 +759,20 @@ pub struct L1Post {
     pub dynamic_next: Option<L1PostDynamic>,
     /// Extension blocks (Table 37). Empty when `L1_POST_EXTENSION = 0`.
     pub extension: Vec<L1ExtBlock>,
+}
+
+impl L1Post {
+    /// Serialise back to the framed T2-MI L1-current data region — the bytes
+    /// that follow the 21-byte L1PRE inside `L1CurrentPayload::l1_current_data`
+    /// (TS 102 773 Table 2). Symmetric with the parse performed by
+    /// [`crate::payload::L1CurrentPayload::l1_post`].
+    ///
+    /// # Errors
+    /// [`crate::Error::L1Bits`] on an internal bit-buffer overrun (cannot occur
+    /// for a value obtained by parsing valid wire data).
+    pub fn to_l1_current_framed(&self) -> crate::error::Result<Vec<u8>> {
+        serialize_l1_post_framed(self)
+    }
 }
 
 /// Parse the framed T2-MI L1-current data region (everything after the 21-byte L1PRE).
@@ -808,7 +860,7 @@ pub(crate) fn parse_l1_post_from_framed(
         });
     }
     let extension = if l1ext_bytes > 0 {
-        parse_ext_blocks(&framed[pos..pos + l1ext_bytes])?
+        parse_ext_blocks(&framed[pos..pos + l1ext_bytes], l1ext_len_bits)?
     } else {
         Vec::new()
     };
@@ -819,6 +871,43 @@ pub(crate) fn parse_l1_post_from_framed(
         dynamic_next: None, // L1-current carries only the current-frame dynamic
         extension,
     })
+}
+
+/// Append one framed block: a 16-bit bit-length, then the bit-packed content
+/// zero-padded up to a byte boundary.
+fn push_framed_block<F>(out: &mut Vec<u8>, bit_len: usize, write: F) -> crate::error::Result<()>
+where
+    F: FnOnce(&mut BitWriter<'_>) -> crate::error::Result<()>,
+{
+    out.extend_from_slice(&(bit_len as u16).to_be_bytes());
+    let start = out.len();
+    out.resize(start + bit_len.div_ceil(8), 0);
+    let mut w = BitWriter::new(&mut out[start..]);
+    write(&mut w)?;
+    Ok(())
+}
+
+/// Serialise an [`L1Post`] back to the framed T2-MI L1-current data region
+/// (everything after the 21-byte L1PRE): `L1CONF_LEN`+`L1CONF`,
+/// `L1DYN_CURR_LEN`+`L1DYN_CURR`, `L1EXT_LEN`+`L1EXT` (TS 102 773 Table 2).
+/// Each block is zero-padded to a byte boundary. `dynamic_next` is not part of
+/// the L1-current framing (it is carried in L1-future) and is ignored here.
+pub(crate) fn serialize_l1_post_framed(post: &L1Post) -> crate::error::Result<Vec<u8>> {
+    let mut out = Vec::new();
+    push_framed_block(&mut out, post.configurable.len_bits(), |w| {
+        post.configurable.serialize_bits(w)
+    })?;
+    push_framed_block(&mut out, post.dynamic_current.len_bits(), |w| {
+        post.dynamic_current.serialize_bits(w)
+    })?;
+    let ext_bits: usize = post.extension.iter().map(L1ExtBlock::bits).sum();
+    push_framed_block(&mut out, ext_bits, |w| {
+        for block in &post.extension {
+            block.write(w)?;
+        }
+        Ok(())
+    })?;
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -1006,5 +1095,40 @@ mod tests {
         // Total = 71+48+8 = 127
         let dyn_ = synthetic_dyn(1, 0);
         assert_eq!(dyn_.len_bits(), 127);
+    }
+
+    #[test]
+    fn l1post_framed_round_trip() {
+        // Full L1-current framing round-trip (no extension blocks).
+        let post = L1Post {
+            configurable: synthetic_conf(1, false, 1, 0),
+            dynamic_current: synthetic_dyn(1, 0),
+            dynamic_next: None,
+            extension: Vec::new(),
+        };
+        let framed = post.to_l1_current_framed().unwrap();
+        // 2 + ceil(191/8)=24 + 2 + ceil(127/8)=16 + 2 + 0 = 46 bytes
+        assert_eq!(framed.len(), 46);
+        let parsed = parse_l1_post_from_framed(&framed, 1, false).unwrap();
+        assert_eq!(post, parsed);
+    }
+
+    #[test]
+    fn l1post_framed_round_trip_with_nonaligned_ext() {
+        // A 12-bit (non-byte-aligned) extension block exercises the
+        // bit-contiguous L1ExtBlock parse/serialize path.
+        let post = L1Post {
+            configurable: synthetic_conf(2, true, 1, 1),
+            dynamic_current: synthetic_dyn(1, 1),
+            dynamic_next: None,
+            extension: vec![L1ExtBlock {
+                block_type: 0xFF,
+                data_bit_len: 12,
+                data: vec![0xAB, 0xC0], // 12 bits: 0xAB then high nibble 0xC, low 4 bits zero-pad
+            }],
+        };
+        let framed = post.to_l1_current_framed().unwrap();
+        let parsed = parse_l1_post_from_framed(&framed, 2, true).unwrap();
+        assert_eq!(post, parsed);
     }
 }
