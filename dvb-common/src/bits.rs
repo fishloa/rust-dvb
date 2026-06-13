@@ -366,7 +366,10 @@ mod tests {
         // 0b100 needs 3 bits; asking for 2 must fail.
         assert_eq!(
             w.write_bits(0b100, 2).unwrap_err(),
-            BitError::ValueTooWide { value: 0b100, bits: 2 }
+            BitError::ValueTooWide {
+                value: 0b100,
+                bits: 2
+            }
         );
     }
 
@@ -432,7 +435,11 @@ mod tests {
     fn exhaustive_small_width_round_trip() {
         // Every value of every width 1..=16 reads back identically.
         for bits in 1u32..=16 {
-            let max = if bits == 64 { u64::MAX } else { (1u64 << bits) - 1 };
+            let max = if bits == 64 {
+                u64::MAX
+            } else {
+                (1u64 << bits) - 1
+            };
             for value in [0u64, 1, max, max / 2] {
                 let mut buf = [0u8; 8];
                 let mut w = BitWriter::new(&mut buf);
