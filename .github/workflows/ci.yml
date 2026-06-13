@@ -32,8 +32,14 @@ jobs:
       # the library crates' bare --no-default-features build.
       - name: Build (all features)
         run: cargo build --workspace --exclude dvb-tools --exclude dvb-conformance --exclude dvb-stream --all-features --locked
+      # `--tests` + `--doc` (rather than the default, which also builds bench
+      # targets): the `criterion` dev-dependency tree moves faster than the
+      # workspace 1.75 MSRV, so bench targets are compiled only on the stable
+      # clippy job (`--all-targets`) below — never on the 1.75 row.
       - name: Test (all features)
-        run: cargo test --workspace --exclude dvb-tools --exclude dvb-conformance --exclude dvb-stream --all-features --locked
+        run: cargo test --workspace --exclude dvb-tools --exclude dvb-conformance --exclude dvb-stream --all-features --locked --tests
+      - name: Doctest (all features)
+        run: cargo test --workspace --exclude dvb-tools --exclude dvb-conformance --exclude dvb-stream --all-features --locked --doc
       # Exclude the feature-forcing leaf crates here. dvb-tools (binary) needs
       # dvb-si's ts/serde/chrono + dvb-t2mi's ts; dvb-conformance needs dvb-si's
       # ts/serde; dvb-stream always depends on tokio which has a faster-moving
@@ -43,7 +49,9 @@ jobs:
       - name: Build (no default features)
         run: cargo build --workspace --exclude dvb-tools --exclude dvb-conformance --exclude dvb-stream --no-default-features --locked
       - name: Test (no default features)
-        run: cargo test --workspace --exclude dvb-tools --exclude dvb-conformance --exclude dvb-stream --no-default-features --locked
+        run: cargo test --workspace --exclude dvb-tools --exclude dvb-conformance --exclude dvb-stream --no-default-features --locked --tests
+      - name: Doctest (no default features)
+        run: cargo test --workspace --exclude dvb-tools --exclude dvb-conformance --exclude dvb-stream --no-default-features --locked --doc
 
   lint:
     name: clippy
