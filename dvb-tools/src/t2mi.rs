@@ -119,7 +119,7 @@ pub fn run(args: &[String]) -> ExitCode {
         let stdout = std::io::stdout();
         let mut out = BufWriter::new(stdout.lock());
         for packet in for_each_packet(&data) {
-            for inner_pkt in rec.feed(packet) {
+            for inner_pkt in rec.feed(&packet) {
                 if let Err(e) = out.write_all(inner_pkt) {
                     if e.kind() == std::io::ErrorKind::BrokenPipe {
                         break;
@@ -171,7 +171,7 @@ pub fn run(args: &[String]) -> ExitCode {
     match pid {
         PidArg::Ts(_) => {
             for packet in for_each_packet(&data) {
-                for event in pump.feed_ts(packet) {
+                for event in pump.feed_ts(&packet) {
                     print_event(event);
                 }
             }

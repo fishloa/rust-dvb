@@ -59,7 +59,7 @@ pub fn run(args: &[String]) -> ExitCode {
     // separately and handed to `feed_sdt` to attach service names.
     let mut sdt_collector = SectionSetCollector::new();
     for packet in for_each_packet(&data) {
-        for event in demux.feed(packet) {
+        for event in demux.feed(&packet) {
             let pid = u16::from(event.pid());
             let table_id = event.table_id();
             let bytes: &[u8] = event.bytes();

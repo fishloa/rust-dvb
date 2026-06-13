@@ -52,7 +52,7 @@ pub fn run(args: &[String]) -> ExitCode {
 
     let mut demux = SiDemux::builder().build();
     for packet in for_each_packet(&data) {
-        for event in demux.feed(packet) {
+        for event in demux.feed(&packet) {
             match event.table_section() {
                 Ok(table) => {
                     if json {
