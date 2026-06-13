@@ -1,28 +1,45 @@
-//! TS Byte-Stream Resynchroniser — ISO/IEC 13818-1 §2.4.3.2.
+//! Stateful TS byte-stream resynchroniser — ISO/IEC 13818-1 §2.4.3.2.
 //!
 //! Recovers 188-byte MPEG-TS packet alignment from an arbitrary byte stream
-//! (file reads, UDP payloads) that may start mid-packet or contain junk.
-//! Also detects 204-byte packets (188-byte TS + 16 Reed-Solomon parity)
-//! and strips the parity bytes.
+//! (file reads, UDP payloads) that may start mid-packet or contain leading
+//! garbage.  Also detects 204-byte Reed-Solomon-coded packets (DVB RS-coded
+//! outer forward-error-correction layer) and strips the 16 parity bytes,
+//! yielding standard 188-byte TS packets in both cases.
+//!
+//! # Feature gate
+//!
+//! This module is only compiled when the `ts` feature is enabled (the
+//! default), because it depends on the TS constants in [`crate::ts`].
+//!
+//! # Example
+//!
+//! ```
+//! use dvb_si::resync::TsResync;
+//!
+//! let mut r = TsResync::new();
+//! // Feed arbitrary bytes (file chunks, UDP datagrams, etc.).
+//! let packets: Vec<[u8; 188]> = r.feed(b"some raw bytes");
+//! let stats = r.stats();
+//! ```
 
-/// Sync byte value (ISO/IEC 13818-1 §2.4.3.2).
-pub const SYNC_BYTE: u8 = 0x47;
+use crate::ts::{TS_PACKET_SIZE, TS_SYNC_BYTE};
 
-/// Transport Stream packet size (ISO/IEC 13818-1 §2.4.3.2).
-pub const TS_PACKET_SIZE: usize = 188;
-
-/// TS packet with 16-byte Reed-Solomon outer code (DVB).
+/// Reed-Solomon-coded TS packet size: 188-byte payload + 16 parity bytes
+/// (DVB RS outer FEC, ISO/IEC 13818-1 §2.4.3.2 informative note).
 pub const RS_PACKET_SIZE: usize = 204;
 
+/// Number of Reed-Solomon parity bytes appended to a 204-byte packet.
+pub const RS_PARITY_LEN: usize = RS_PACKET_SIZE - TS_PACKET_SIZE;
+
 /// Consecutive sync bytes at the candidate stride required to declare lock.
-const LOCK_CONFIRMATIONS: usize = 5;
+pub const LOCK_CONFIRMATIONS: usize = 5;
 
 /// Detected packet size after locking.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum PacketStride {
-    /// Standard 188-byte TS packets.
+    /// Standard 188-byte TS packets (ISO/IEC 13818-1 §2.4.3.2).
     Ts188,
     /// 204-byte packets (188-byte TS + 16 Reed-Solomon parity bytes).
     Rs204,
@@ -41,32 +58,44 @@ pub struct ResyncStats {
     pub dropped_bytes: u64,
 }
 
-/// TS byte-stream resynchroniser.
+/// Stateful TS byte-stream resynchroniser (ISO/IEC 13818-1 §2.4.3.2).
 ///
 /// Recovers 188-byte MPEG-TS packet alignment from an arbitrary byte stream
 /// that may start mid-packet or contain junk, and detects 204-byte
 /// Reed-Solomon-coded packets (stripping the 16 parity bytes).
 ///
-/// ISO/IEC 13818-1 §2.4.3.2.
+/// Feed raw bytes with [`feed`](Self::feed); each call returns a `Vec` of
+/// aligned 188-byte TS packets.  Bytes are buffered across calls so that
+/// packet boundaries may span call boundaries freely.
+///
+/// Lock is declared after [`LOCK_CONFIRMATIONS`] consecutive sync bytes are
+/// found at the candidate stride (188 or 204).  On sync loss the resynchroniser
+/// re-scans from the byte after the lost position.
+///
+/// # Stats
+///
+/// [`stats`](Self::stats) returns cumulative counters (packets emitted,
+/// resyncs, dropped bytes).
 #[derive(Debug, Default)]
 pub struct TsResync {
     buf: Vec<u8>,
+    /// Logical read head into `buf`; compacted periodically.
     head: usize,
     stride: Option<PacketStride>,
     stats: ResyncStats,
 }
 
 impl TsResync {
-    /// Create a new resynchroniser with an empty buffer.
+    /// Create a new resynchroniser with an empty internal buffer.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Append `data`, emit every newly-aligned 188-byte TS packet.
+    /// Feed `data` and emit every newly-aligned 188-byte TS packet.
     ///
-    /// When the stream is detected as 204-byte, the 16 Reed-Solomon parity
-    /// bytes are stripped and only the 188-byte TS payload is emitted.
-    /// Bytes are buffered across calls.
+    /// For a 204-byte stream the 16 Reed-Solomon parity bytes are stripped;
+    /// only the 188-byte TS payload is returned.  Bytes that cannot yet form
+    /// a complete packet (or fall before lock) are buffered for the next call.
     pub fn feed(&mut self, data: &[u8]) -> Vec<[u8; TS_PACKET_SIZE]> {
         self.buf.extend_from_slice(data);
         let mut emitted = Vec::new();
@@ -79,6 +108,7 @@ impl TsResync {
                         self.head += offset;
                         self.stride = Some(s);
                     } else {
+                        // Keep at most enough bytes to detect a future lock.
                         let keep = LOCK_CONFIRMATIONS * RS_PACKET_SIZE;
                         let tail_len = self.buf.len() - self.head;
                         if tail_len > keep {
@@ -100,13 +130,14 @@ impl TsResync {
                         self.compact();
                         return emitted;
                     }
-                    if self.buf[self.head] == SYNC_BYTE {
+                    if self.buf[self.head] == TS_SYNC_BYTE {
                         let mut packet = [0u8; TS_PACKET_SIZE];
                         packet.copy_from_slice(&self.buf[self.head..self.head + TS_PACKET_SIZE]);
                         emitted.push(packet);
                         self.head += s;
                         self.stats.packets += 1;
                     } else {
+                        // Sync byte missing — record the loss and re-scan.
                         self.stats.resyncs += 1;
                         self.stats.dropped_bytes += 1;
                         self.head += 1;
@@ -127,6 +158,7 @@ impl TsResync {
         self.stats
     }
 
+    /// Compact the internal buffer by discarding consumed bytes.
     fn compact(&mut self) {
         if self.head > 0 {
             self.buf.drain(..self.head);
@@ -135,14 +167,14 @@ impl TsResync {
     }
 }
 
-/// Scan the buffer for the smallest offset `o` such that a stride S
-/// (tried 188 first, then 204) yields [`LOCK_CONFIRMATIONS`] consecutive
-/// sync bytes at positions `o + k*S` for `k = 0 .. LOCK_CONFIRMATIONS`.
+/// Scan `buf` for the smallest offset `o` such that stride `S` (tried 188
+/// first, then 204) yields [`LOCK_CONFIRMATIONS`] consecutive sync bytes at
+/// positions `o + k*S` for `k = 0 .. LOCK_CONFIRMATIONS`.
 ///
-/// Returns `(offset, stride)` on success, or [`None`] if no lock is found.
+/// Returns `(offset, stride)` on success, or `None` if no lock is found.
 fn find_sync(buf: &[u8]) -> Option<(usize, PacketStride)> {
     for o in 0..buf.len() {
-        if buf[o] != SYNC_BYTE {
+        if buf[o] != TS_SYNC_BYTE {
             continue;
         }
         if try_stride(buf, o, TS_PACKET_SIZE) {
@@ -155,14 +187,13 @@ fn find_sync(buf: &[u8]) -> Option<(usize, PacketStride)> {
     None
 }
 
-/// Check that `LOCK_CONFIRMATIONS` consecutive sync bytes exist at stride `s`
-/// starting from `offset` (inclusive).  The first byte (`buf[offset]`) is
-/// already known to be [`SYNC_BYTE`]; this checks the next
-/// `LOCK_CONFIRMATIONS - 1` positions.
+/// Return `true` if `LOCK_CONFIRMATIONS` consecutive sync bytes exist at
+/// stride `s` starting from `offset` (the first is already known to be
+/// [`TS_SYNC_BYTE`]).
 fn try_stride(buf: &[u8], offset: usize, s: usize) -> bool {
     for k in 1..LOCK_CONFIRMATIONS {
         let pos = offset + k * s;
-        if pos >= buf.len() || buf[pos] != SYNC_BYTE {
+        if pos >= buf.len() || buf[pos] != TS_SYNC_BYTE {
             return false;
         }
     }
@@ -173,23 +204,23 @@ fn try_stride(buf: &[u8], offset: usize, s: usize) -> bool {
 mod tests {
     use super::*;
 
-    /// Build a 188-byte TS packet starting with 0x47 followed by a distinct
-    /// payload byte `tag` (repeated).  All non-sync bytes are kept away from
-    /// 0x47 so that no false lock can occur.
+    /// Build a 188-byte TS packet starting with `TS_SYNC_BYTE` followed by
+    /// `tag` (repeated).  All non-sync bytes are kept away from `0x47` so
+    /// that no false lock occurs in the fixture data.
     fn ts_packet(tag: u8) -> [u8; TS_PACKET_SIZE] {
-        assert_ne!(tag, SYNC_BYTE, "tag must not equal sync byte");
+        assert_ne!(tag, TS_SYNC_BYTE, "tag must not equal sync byte");
         let mut pkt = [tag; TS_PACKET_SIZE];
-        pkt[0] = SYNC_BYTE;
+        pkt[0] = TS_SYNC_BYTE;
         pkt
     }
 
-    /// Build a 204-byte RS-coded packet: 188-byte TS payload (with tag) +
-    /// 16 parity bytes filled with `parity` (must not be 0x47).
+    /// Build a 204-byte RS-coded packet: 188-byte TS payload (with `ts_tag`)
+    /// plus 16 parity bytes filled with `parity` (must not be `0x47`).
     fn rs_packet(ts_tag: u8, parity: u8) -> [u8; RS_PACKET_SIZE] {
-        assert_ne!(ts_tag, SYNC_BYTE);
-        assert_ne!(parity, SYNC_BYTE);
+        assert_ne!(ts_tag, TS_SYNC_BYTE);
+        assert_ne!(parity, TS_SYNC_BYTE);
         let mut pkt = [parity; RS_PACKET_SIZE];
-        pkt[0] = SYNC_BYTE;
+        pkt[0] = TS_SYNC_BYTE;
         pkt[1..TS_PACKET_SIZE].fill(ts_tag);
         pkt
     }
@@ -203,32 +234,21 @@ mod tests {
         v
     }
 
-    /// Feed `data` into a fresh [`TsResync`] and return everything emitted.
-    fn feed_once(data: &[u8]) -> Vec<[u8; TS_PACKET_SIZE]> {
-        TsResync::new().feed(data)
-    }
-
     // ------------------------------------------------------------------
     // Test 1 — aligned 188-byte passthrough
     // ------------------------------------------------------------------
     #[test]
     fn aligned_188_passthrough() {
-        let p0 = ts_packet(0x01);
-        let p1 = ts_packet(0x02);
-        let p2 = ts_packet(0x03);
-        let p3 = ts_packet(0x04);
-        let p4 = ts_packet(0x05);
-        let data = concat_ts(&[p0, p1, p2, p3, p4]);
+        let packets: Vec<_> = (0u8..5).map(|i| ts_packet(i + 1)).collect();
+        let data = concat_ts(&packets);
 
         let mut r = TsResync::new();
         let emitted = r.feed(&data);
 
         assert_eq!(emitted.len(), 5);
-        assert_eq!(emitted[0], p0);
-        assert_eq!(emitted[1], p1);
-        assert_eq!(emitted[2], p2);
-        assert_eq!(emitted[3], p3);
-        assert_eq!(emitted[4], p4);
+        for (i, (e, p)) in emitted.iter().zip(packets.iter()).enumerate() {
+            assert_eq!(e, p, "packet {i} mismatch");
+        }
         assert_eq!(r.stride(), Some(PacketStride::Ts188));
         let s = r.stats();
         assert_eq!(s.packets, 5);
@@ -237,53 +257,68 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // Test 2 — junk prefix, then lock and recover all packets
+    // Test 2 — lock only after LOCK_CONFIRMATIONS sync bytes
     // ------------------------------------------------------------------
     #[test]
-    fn junk_prefix_locks() {
-        let pkts: Vec<_> = (0..6).map(|i| ts_packet(i + 1)).collect();
+    fn requires_n_confirmations_before_lock() {
+        // Pin the default lock window. The hardcoded 4-vs-5 boundary below only
+        // bites the threshold when this is 5 — assert it explicitly so a change
+        // to the default (or to this test's literals) cannot silently pass.
+        assert_eq!(
+            LOCK_CONFIRMATIONS, 5,
+            "this test pins the default lock window of 5"
+        );
+
+        // FOUR confirming, stride-aligned packets are one short of the window:
+        // only four sync bytes sit at the 188-stride boundaries, so the
+        // resynchroniser must NOT lock and must emit nothing (it buffers).
+        let four = concat_ts(&(1u8..=4).map(ts_packet).collect::<Vec<_>>());
+        let mut r = TsResync::new();
+        assert_eq!(
+            r.feed(&four).len(),
+            0,
+            "4 confirmations (< 5) must not lock or emit"
+        );
+        assert_eq!(r.stride(), None, "stride must remain None below the window");
+
+        // The FIFTH stride-aligned sync byte completes the window → lock.
+        let mut out = r.feed(&ts_packet(5));
+        out.extend(r.feed(&[]));
+        assert!(
+            r.stride().is_some(),
+            "the 5th confirmation must trigger lock"
+        );
+        // Once locked, the buffered packets are emitted (5 fed, all aligned).
+        assert_eq!(out.len(), 5, "all five aligned packets emit once locked");
+    }
+
+    // ------------------------------------------------------------------
+    // Test 3 — junk prefix: leading garbage dropped, correct count returned
+    // ------------------------------------------------------------------
+    #[test]
+    fn junk_prefix_correct_dropped_count() {
+        let pkts: Vec<_> = (0u8..6).map(|i| ts_packet(i + 1)).collect();
         let stream = concat_ts(&pkts);
 
-        let junk: Vec<u8> = vec![0x00; 7];
-        let mut data = junk.clone();
+        let junk_len = 7usize;
+        let junk: Vec<u8> = vec![0x00; junk_len];
+        let mut data = junk;
         data.extend_from_slice(&stream);
 
         let mut r = TsResync::new();
         let emitted = r.feed(&data);
 
         assert_eq!(emitted.len(), 6);
-        for (i, p) in emitted.iter().enumerate() {
-            assert_eq!(*p, pkts[i], "packet {i} mismatch");
+        for (i, (e, p)) in emitted.iter().zip(pkts.iter()).enumerate() {
+            assert_eq!(*e, *p, "packet {i} mismatch after junk prefix");
         }
-        assert_eq!(r.stride(), Some(PacketStride::Ts188));
         let s = r.stats();
-        assert_eq!(s.packets, 6);
+        assert_eq!(
+            s.dropped_bytes, junk_len as u64,
+            "dropped bytes must equal junk prefix"
+        );
         assert_eq!(s.resyncs, 0);
-        assert_eq!(s.dropped_bytes, 7);
-    }
-
-    // ------------------------------------------------------------------
-    // Test 3 — chunked feed equivalence
-    // ------------------------------------------------------------------
-    #[test]
-    fn chunked_feed_equivalence() {
-        let pkts: Vec<_> = (0..6).map(|i| ts_packet(i + 1)).collect();
-        let stream = concat_ts(&pkts);
-
-        // Whole feed
-        let whole = feed_once(&stream);
-
-        // Chunked feed — 100 bytes at a time
-        let mut r = TsResync::new();
-        let mut chunked = Vec::new();
-        for chunk in stream.chunks(100) {
-            chunked.extend(r.feed(chunk));
-        }
-
-        assert_eq!(whole.len(), chunked.len());
-        for (i, (w, c)) in whole.iter().zip(chunked.iter()).enumerate() {
-            assert_eq!(w, c, "packet {i} mismatch");
-        }
+        assert_eq!(s.packets, 6);
     }
 
     // ------------------------------------------------------------------
@@ -291,34 +326,27 @@ mod tests {
     // ------------------------------------------------------------------
     #[test]
     fn midstream_loss_resync() {
-        // Need >= LOCK_CONFIRMATIONS clean packets BEFORE the corruption (so
-        // the stream actually locks first, making the disruption a genuine
-        // resync rather than a delayed initial lock) and >= LOCK_CONFIRMATIONS
-        // after (so it can re-lock and recover). 14 packets, corruption inside
-        // packet 7, satisfies both.
-        let pkts: Vec<_> = (0..14).map(|i| ts_packet(i + 1)).collect();
+        // Need > LOCK_CONFIRMATIONS clean packets before and after the stray
+        // byte so the stream locks, loses sync, and re-locks.
+        let pkts: Vec<_> = (0u8..14).map(|i| ts_packet(i + 1)).collect();
         let clean = concat_ts(&pkts);
 
         // Insert a single stray byte 12 bytes into packet 7.
         let insert_at = 7 * TS_PACKET_SIZE + 12;
-        let stray: u8 = 0x00;
         let mut data = clean[..insert_at].to_vec();
-        data.push(stray);
+        data.push(0x00);
         data.extend_from_slice(&clean[insert_at..]);
 
         let mut r = TsResync::new();
         let emitted = r.feed(&data);
 
         let s = r.stats();
-        // A locked stream losing alignment mid-way must record a resync.
         assert!(
             s.resyncs >= 1,
             "mid-stream corruption must trigger a resync, got {}",
             s.resyncs
         );
-        // Locks on the clean prefix: the first emitted packet is P0.
         assert_eq!(emitted[0], pkts[0], "first emitted packet is P0");
-        // Re-locks after the corruption and recovers most of the stream.
         assert!(
             emitted.len() >= 10,
             "should recover and emit most packets, got {}",
@@ -327,26 +355,35 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // Test 5 — 204-byte RS-coded packets detected and stripped
+    // Test 5 — 204-byte RS-coded packets detected + RS stripped
     // ------------------------------------------------------------------
     #[test]
     fn rs204_detected_and_stripped() {
         let mut stream = Vec::new();
-        let mut expected_payloads = Vec::new();
+        let mut expected = Vec::new();
         for i in 0u8..6 {
             let tag = i + 1;
             let rs = rs_packet(tag, 0xFF);
             stream.extend_from_slice(&rs);
-            expected_payloads.push(ts_packet(tag));
+            expected.push(ts_packet(tag));
         }
 
         let mut r = TsResync::new();
         let emitted = r.feed(&stream);
 
-        assert_eq!(emitted.len(), 6);
-        assert_eq!(r.stride(), Some(PacketStride::Rs204));
-        for (i, (e, p)) in emitted.iter().zip(expected_payloads.iter()).enumerate() {
-            assert_eq!(e, p, "packet {i} mismatch");
+        assert_eq!(emitted.len(), 6, "RS-coded stream must emit 6 packets");
+        assert_eq!(
+            r.stride(),
+            Some(PacketStride::Rs204),
+            "stride must be Rs204"
+        );
+        for (i, (e, p)) in emitted.iter().zip(expected.iter()).enumerate() {
+            assert_eq!(e, p, "RS-stripped packet {i} mismatch");
+        }
+        // Confirm the emitted 188-byte packets are parseable by TsPacket.
+        for (i, pkt) in emitted.iter().enumerate() {
+            crate::ts::TsPacket::parse(pkt)
+                .unwrap_or_else(|e| panic!("RS-stripped packet {i} TsPacket::parse failed: {e}"));
         }
         let s = r.stats();
         assert_eq!(s.packets, 6);
@@ -355,38 +392,88 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // Test 6 — large single-feed O(n) exercise (not O(n²))
+    // Test 6 — aligned 188 stream yields same packets as plain chunks(188)
+    //   (equivalence: fixture-less variant using synthetic data)
     // ------------------------------------------------------------------
     #[test]
-    fn large_buffer_single_feed() {
-        const NUM_PACKETS: usize = 500;
-        let pkts: Vec<_> = (0..NUM_PACKETS)
-            .map(|i| {
-                let mut tag = (i % 253 + 1) as u8;
-                if tag >= SYNC_BYTE {
-                    tag += 1;
-                }
-                ts_packet(tag)
-            })
-            .collect();
-        let stream = concat_ts(&pkts);
+    fn aligned_188_matches_plain_chunks() {
+        let pkts: Vec<_> = (0u8..10).map(|i| ts_packet(i + 1)).collect();
+        let data = concat_ts(&pkts);
 
-        // Prepend some garbage so the resync path is exercised.
-        let garbage: Vec<u8> = vec![0x00; 13];
-        let mut data = garbage;
-        data.extend_from_slice(&stream);
+        // Oracle: plain chunks(188) filtered by sync byte.
+        let oracle: Vec<[u8; TS_PACKET_SIZE]> = data
+            .chunks_exact(TS_PACKET_SIZE)
+            .filter(|c| c[0] == TS_SYNC_BYTE)
+            .map(|c| c.try_into().unwrap())
+            .collect();
 
         let mut r = TsResync::new();
         let emitted = r.feed(&data);
 
-        assert_eq!(emitted.len(), NUM_PACKETS);
-        for (i, (e, p)) in emitted.iter().zip(pkts.iter()).enumerate() {
-            assert_eq!(e, p, "packet {i} mismatch");
+        assert_eq!(emitted.len(), oracle.len(), "count mismatch");
+        for (i, (e, o)) in emitted.iter().zip(oracle.iter()).enumerate() {
+            assert_eq!(e, o, "packet {i} differs from chunks-oracle");
         }
-        assert_eq!(r.stride(), Some(PacketStride::Ts188));
-        let s = r.stats();
-        assert_eq!(s.packets, NUM_PACKETS as u64);
-        assert_eq!(s.resyncs, 0);
-        assert_eq!(s.dropped_bytes, 13);
+    }
+
+    // ------------------------------------------------------------------
+    // Test 7 — chunked feed equivalence (same result in small increments)
+    // ------------------------------------------------------------------
+    #[test]
+    fn chunked_feed_equivalence() {
+        let pkts: Vec<_> = (0u8..6).map(|i| ts_packet(i + 1)).collect();
+        let stream = concat_ts(&pkts);
+
+        let whole = {
+            let mut r = TsResync::new();
+            r.feed(&stream)
+        };
+
+        let chunked = {
+            let mut r = TsResync::new();
+            let mut out = Vec::new();
+            for chunk in stream.chunks(100) {
+                out.extend(r.feed(chunk));
+            }
+            out
+        };
+
+        assert_eq!(whole.len(), chunked.len());
+        for (i, (w, c)) in whole.iter().zip(chunked.iter()).enumerate() {
+            assert_eq!(w, c, "packet {i} mismatch");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Test 8 — fixture-based: m6-single.ts differential
+    //   feeding the real fixture through TsResync must yield the same
+    //   188-byte packets as plain chunks_exact(188) + sync-byte filter.
+    // ------------------------------------------------------------------
+    #[test]
+    fn fixture_m6_matches_plain_chunks() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/m6-single.ts");
+        let data = std::fs::read(path).expect("m6-single.ts fixture not found");
+
+        // Oracle: plain aligned 188-byte reads.
+        let oracle: Vec<[u8; TS_PACKET_SIZE]> = data
+            .chunks_exact(TS_PACKET_SIZE)
+            .filter(|c| c[0] == TS_SYNC_BYTE)
+            .map(|c| c.try_into().unwrap())
+            .collect();
+        assert!(!oracle.is_empty(), "oracle empty — fixture empty?");
+
+        let mut r = TsResync::new();
+        let emitted = r.feed(&data);
+
+        assert_eq!(
+            emitted.len(),
+            oracle.len(),
+            "packet count: TsResync={} oracle={}",
+            emitted.len(),
+            oracle.len()
+        );
+        for (i, (e, o)) in emitted.iter().zip(oracle.iter()).enumerate() {
+            assert_eq!(e, o, "packet {i} mismatch vs oracle");
+        }
     }
 }

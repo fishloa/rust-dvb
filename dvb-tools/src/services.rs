@@ -128,7 +128,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let mut nit_seen = 0u32;
 
     for packet in for_each_packet(&data) {
-        for event in demux.feed(packet) {
+        for event in demux.feed(&packet) {
             let table_id = event.table_id();
             let bytes = event.bytes().to_vec();
             // SDT (other/current) — table_id 0x42 / 0x46. NIT — 0x40 / 0x41.

@@ -91,7 +91,7 @@ pub fn run(args: &[String]) -> ExitCode {
         // Every `for_each_packet` chunk should be parseable (sync-byte checked,
         // length is exactly 188 bytes). Keep going on a parse error instead
         // of failing the whole CLI over one malformed packet.
-        let Ok(parsed) = TsPacket::parse(packet) else {
+        let Ok(parsed) = TsPacket::parse(&packet) else {
             continue;
         };
         let pid = parsed.header.pid;

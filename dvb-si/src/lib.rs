@@ -167,7 +167,6 @@ pub mod epg;
 pub mod error;
 pub mod pid;
 mod registry_names;
-pub mod resync;
 pub mod section;
 pub mod table_id;
 pub mod tables;
@@ -181,6 +180,8 @@ pub mod owned;
 pub mod demux;
 #[cfg(feature = "ts")]
 pub mod mux;
+#[cfg(feature = "ts")]
+pub mod resync;
 #[cfg(feature = "ts")]
 pub mod ts;
 
