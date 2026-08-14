@@ -138,6 +138,13 @@ dvb-si            = { path = "../dvb-si", version = "10", default-features = fal
 # `source::segment`'s MPTS test (issue #887). Promoted from
 # `[dev-dependencies]` because production code (`dvr.rs`) now needs it too.
 mpeg-ts           = { path = "../mpeg-ts", version = "0.4" }
+# Canonical timed-metadata event types (issue #969): `source::scte35` /
+# `route` ingest `timed_metadata::TimedEvent` values into the trunk's event
+# log, and `origin::resource::inject_segment_events` pattern-matches on
+# `timed_metadata::event::SourcePayload::Scte35`. A transitive dep through
+# `media-plane` alone cannot be named inside a pattern match (edition 2024
+# requires it be declared), hence the direct dependency.
+timed-metadata    = { path = "../timed-metadata", version = "0.5", default-features = false }
 
 [features]
 # `tls` is default-on: `rtsps://` sources should work out of the box. It pulls

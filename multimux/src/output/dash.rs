@@ -258,6 +258,17 @@ fn render_mpd(route: &RouteHandle) -> Option<String> {
         ..DashPackager::default()
     };
 
+    // Declare SCTE-35 as an inband event stream (issue #969): the DASH client
+    // is told "segments may carry `emsg` boxes with this scheme" (ANSI/SCTE
+    // 214-3 §8.3.3). Always declared -- a client seeing the declaration with
+    // no emsg boxes in any segment is harmless.
+    packager
+        .inband_event_streams
+        .push(transmux::InbandEventStream {
+            scheme_id_uri: "urn:scte:scte35:2013:bin".to_string(),
+            value: None,
+        });
+
     packager.package(&media).ok()
 }
 
@@ -535,6 +546,26 @@ mod tests {
             resp.status(),
             StatusCode::SERVICE_UNAVAILABLE,
             "a route with no program announced yet must be 503 (not ready), not 404 (gone)"
+        );
+    }
+
+    #[test]
+    fn render_mpd_declares_scte35_inband_event_stream() {
+        // issue #969: the MPD must advertise SCTE-35 as an inband event
+        // stream so DASH clients know segments may carry `emsg` boxes with
+        // this scheme (ANSI/SCTE 214-3 §8.3.3).
+        let route = RouteHandle::new(4.0, 500, 4);
+        route.publish_new_program(crate::route::SPTS_PROGRAM_ID);
+        route.set_track_specs(crate::route::SPTS_PROGRAM_ID, vec![video_spec(1)]);
+        route.add_segment(crate::route::SPTS_PROGRAM_ID, seg(1, 4.0));
+        let mpd = render_mpd(&route).unwrap();
+        assert!(
+            mpd.contains("<InbandEventStream"),
+            "MPD must declare an InbandEventStream: {mpd}"
+        );
+        assert!(
+            mpd.contains("urn:scte:scte35:2013:bin"),
+            "InbandEventStream must use the SCTE-35 scheme URI: {mpd}"
         );
     }
 }
