@@ -1526,7 +1526,7 @@ dependencies = [
 
 [[package]]
 name = "hls-runtime"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "broadcast-auth",
  "broadcast-common",
@@ -1536,6 +1536,7 @@ dependencies = [
  "reqwest",
  "serde",
  "thiserror 2.0.19",
+ "timed-metadata",
  "tokio",
  "transmux",
 ]

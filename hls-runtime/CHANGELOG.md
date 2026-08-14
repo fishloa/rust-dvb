@@ -7,6 +7,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `server::HlsOrigin` now renders SCTE-35 cues published to the trunk's
+  event ring as `#EXT-X-DATERANGE` tag lines in Media Playlists (issue
+  #965). Events are per-segment via `Trunk::events_in_segment`, and carry a
+  wall-clock `START-DATE` (via `timed_metadata::Timeline::with_anchor`) only
+  once the trunk has been given a `time_anchor`; events skipped otherwise.
+  Rendered after the unconditional `#EXT-X-MAP` line under `Container::Fmp4`.
+  Purely internal to `render_playlist` — no new public API on `HlsOrigin`.
+
 ## [0.6.0] - 2026-08-11
 
 ### Added

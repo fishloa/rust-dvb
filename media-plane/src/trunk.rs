@@ -1573,6 +1573,16 @@ impl Trunk {
             .collect()
     }
 
+    /// The wall-clock anchor this trunk's event log has been given, if any.
+    ///
+    /// Returns `None` until [`SegmentWriter::set_time_anchor`] has been
+    /// called — exactly the same `None` that makes
+    /// [`EventAnchor::Utc`]-anchored entries stay unresolved.
+    pub fn time_anchor(&self) -> Option<TimeAnchor> {
+        let state = self.state.lock().expect("Trunk state lock poisoned");
+        state.events.time_anchor
+    }
+
     /// Every currently-resolved event whose media time falls within segment
     /// `segment_number`'s span: `[start_N, start_{N+1})` once
     /// [`SegmentWriter::note_segment_start`] has reported the *next*
