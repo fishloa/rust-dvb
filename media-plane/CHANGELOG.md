@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-16
+
+### Added
+- `Trunk::time_anchor()` — public getter for the wall-clock anchor the
+  trunk's event log has been given via `SegmentWriter::set_time_anchor`,
+  returning `None` until one has been set. Needed by `hls-runtime` 0.7.0
+  to build a `timed_metadata::Timeline` for `EXT-X-DATERANGE` rendering
+  (issue #965).
+
 ## [0.4.0] - 2026-08-11
 
 ### Changed

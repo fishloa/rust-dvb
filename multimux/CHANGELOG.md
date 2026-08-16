@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+- **DASH SCTE-35 inband event signalling** (issue #969). MPD now declares
+  `<InbandEventStream schemeIdUri="urn:scte:scte35:2013:bin">`, and served
+  fMP4 segments carry serialized `emsg` boxes (after `styp`, before `moof`)
+  for segments with resolved SCTE-35 events in the trunk's event ring.
+  Non-segment resources and eventless segments pass through unchanged.
+
 ## [0.10.0] - 2026-08-14
 
 ### Fixed

@@ -7,6 +7,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-16
+
 ### Added
 - `server::HlsOrigin` now renders SCTE-35 cues published to the trunk's
   event ring as `#EXT-X-DATERANGE` tag lines in Media Playlists (issue
