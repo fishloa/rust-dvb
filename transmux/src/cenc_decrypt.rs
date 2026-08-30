@@ -89,6 +89,7 @@ use crate::cenc_crypto::{self, CbcsOp};
 use crate::error::{Error, Result};
 use crate::media::Media;
 use crate::movie_fragment::{MovieFragmentBox, TrackFragmentHeaderBox, TrackFragmentRunBox};
+use crate::sample_groups::{GROUPING_TYPE_SEIG, SampleGroupDescriptionBox};
 
 /// Size of a KID / content key / AES-128 key **or block**, in bytes (AES-128's
 /// key length and block length coincide).
@@ -400,6 +401,20 @@ fn harvest_track(trak: &[u8], fragmented: bool) -> Result<Option<TrackCrypto>> {
         })?;
     let original_format = sinf_parsed.original_format.data_format;
 
+    // A `seig` ('CencSampleEncryptionInformationGroupEntry') sample group in
+    // `stbl` means some run of this track's samples decrypts under a KID/IV
+    // override, not the `tenc` default read above — key rotation within a
+    // single track. This decryptor only ever decrypts with the track-wide
+    // `tenc.default_KID`, so silently proceeding here would decrypt every
+    // group-overridden sample with the wrong key and produce plausible but
+    // wrong plaintext, with no structural signal anything went wrong. Reject
+    // explicitly instead (issue #990) until seig is actually implemented.
+    if container_has_seig_sgpd(stbl)? {
+        return Err(Error::UnsupportedFeature(
+            "seig sample-group key rotation not implemented",
+        ));
+    }
+
     let tkhd = find_box(trak, b"tkhd").ok_or(Error::UnexpectedBox { expected: "tkhd" })?;
     let track_id = crate::init_segment::TrackHeaderBox::parse(tkhd)?.track_id;
 
@@ -499,6 +514,15 @@ fn harvest_fragment_senc(file: &[u8], tracks: &mut [TrackCrypto]) -> Result<()> 
                 // unencrypted audio track alongside a protected video track).
                 continue;
             };
+            // A per-fragment `seig` override (a `traf`-level `sgpd`/`sbgp`,
+            // the common CMAF shape for key rotation across fragments) is
+            // just as unsafe to ignore as the `stbl`-level one checked in
+            // `harvest_track` — see that call site's comment (issue #990).
+            if container_has_seig_sgpd(traf)? {
+                return Err(Error::UnsupportedFeature(
+                    "seig sample-group key rotation not implemented",
+                ));
+            }
             match find_box(traf, b"senc") {
                 Some(senc) => {
                     let senc_parsed = parse_senc_box(senc, crypto.tenc.default_per_sample_iv_size)?;
@@ -897,6 +921,24 @@ fn find_box<'a>(container: &'a [u8], fourcc: &[u8; 4]) -> Option<&'a [u8]> {
 /// no container header is skipped).
 fn find_top_box<'a>(file: &'a [u8], fourcc: &[u8; 4]) -> Option<&'a [u8]> {
     iter_boxes(file).find(|b| &b[4..8] == fourcc)
+}
+
+/// Whether `container` (a `stbl` or `traf`, both direct `sgpd` parents per
+/// ISO/IEC 14496-12 §8.9.3.1) has a `sgpd` box whose `grouping_type` is
+/// `seig` — the CENC key-rotation sample group this decryptor does not
+/// implement (see the two call sites' comments, issue #990).
+///
+/// A container can carry more than one `sgpd` (one per grouping type in use),
+/// so every child is checked rather than just the first.
+fn container_has_seig_sgpd(container: &[u8]) -> Result<bool> {
+    let body = &container[BOX_HEADER_MIN_SIZE.min(container.len())..];
+    for entry in iter_boxes(body).filter(|b| &b[4..8] == b"sgpd") {
+        let sgpd = SampleGroupDescriptionBox::parse(entry)?;
+        if sgpd.grouping_type == GROUPING_TYPE_SEIG {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Descend a chain of container four-CCs from `start`, returning the innermost

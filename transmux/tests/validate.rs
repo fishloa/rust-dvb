@@ -364,6 +364,42 @@ fn mdat_overrun_bites() {
 }
 
 #[test]
+fn mdat_overrun_lower_bound_bites() {
+    // issue #991: a `data_offset` that points *before* the mdat payload (into
+    // the moof itself, or the mdat's own box header) must be rejected even
+    // when the sample range still fits comfortably under the upper bound —
+    // an overrun check that only compares against `mdat_payload_end` misses
+    // this entirely.
+    let data = fixture();
+    let samples = video_samples(&data);
+    let media = clean_media(1, 0, &samples);
+
+    // positive: intact data_offset → no overrun.
+    assert!(!has_code(
+        &validate_media_segment(&media),
+        "media.mdat.overrun"
+    ));
+
+    // negative: rewrite trun.data_offset to 0 (the moof's own first byte).
+    // The mdat is left completely untouched, so `end` (0 + total_size) still
+    // sits well inside the real mdat payload — only the lower-bound check
+    // added for #991 catches this.
+    let (trun_start, _) = find_box_range(&media, 0, media.len(), b"trun").expect("trun present");
+    let mut broken = media.clone();
+    // trun layout: box header(8) + FullBox version/flags(4) + sample_count(4)
+    // + data_offset(4) — see `TrackFragmentRunBox::parse_body`.
+    let data_offset_off = trun_start + 8 + 4 + 4;
+    broken[data_offset_off..data_offset_off + 4].copy_from_slice(&0i32.to_be_bytes());
+
+    let issues = validate_media_segment(&broken);
+    assert!(
+        has_code(&issues, "media.mdat.overrun"),
+        "expected media.mdat.overrun (lower bound), got {:?}",
+        errors(&issues)
+    );
+}
+
+#[test]
 fn moof_without_mdat_bites() {
     let data = fixture();
     let samples = video_samples(&data);

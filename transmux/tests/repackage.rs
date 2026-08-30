@@ -483,3 +483,78 @@ fn trim_snaps_back_off_on_hevc_video_not_audio() {
         "the first kept video sample must be the IDR"
     );
 }
+
+// ===========================================================================
+// Test — #993: `trim`'s window selection must honour each sample's own
+// absolute `dts`, not only a duration-accumulated reconstruction.
+// ===========================================================================
+
+/// A single HEVC track whose recorded per-sample `duration` (3000 each) does
+/// NOT track its real absolute `dts` — sample 2 carries a genuine +5000-tick
+/// gap a duration-summed reconstruction cannot see (e.g. a discontinuity, or
+/// ordinary rounding drift between a nominal per-sample duration and the
+/// source's real measured decode-time deltas). Real dts: `0, 3000, 11000,
+/// 14000, 17000`; a pure running-duration reconstruction would instead see
+/// `0, 3000, 6000, 9000, 12000`.
+///
+/// A window of `[9000, 12000)`:
+/// - reading real `dts` selects only sample 2 (pts 11000) directly, which
+///   snaps back to sample 0 (the only sync sample) — kept = samples 0..=2
+///   (3 samples).
+/// - a duration-summed reconstruction instead selects sample 3 (pts 9000)
+///   directly, snapping back to the same sample 0 — but keeps samples 0..=3
+///   (4 samples), because its (wrong) pts for sample 2 is 6000, not 11000.
+///
+/// So the two implementations disagree on the trimmed sample **count**, not
+/// just on some incidental internal bookkeeping — an outcome an external
+/// caller can observe.
+#[test]
+fn trim_window_follows_real_dts_not_duration_sum() {
+    let video = Track::new(
+        hevc_video_track(1),
+        vec![
+            Sample::new(vec![0x00u8; 8], Some(0), Some(0), Some(3000), true),
+            Sample::new(vec![0x01u8; 8], Some(3000), Some(3000), Some(3000), false),
+            // The hidden +5000 gap: duration still says 3000, but the real
+            // dts jumps by 8000.
+            Sample::new(
+                vec![0x02u8; 8],
+                Some(11_000),
+                Some(11_000),
+                Some(3000),
+                false,
+            ),
+            Sample::new(
+                vec![0x03u8; 8],
+                Some(14_000),
+                Some(14_000),
+                Some(3000),
+                false,
+            ),
+            Sample::new(
+                vec![0x04u8; 8],
+                Some(17_000),
+                Some(17_000),
+                Some(3000),
+                false,
+            ),
+        ],
+    );
+    let media = Media::new(vec![video], 90_000);
+
+    let trimmed = media.trim(9000, 12000).expect("window selects samples");
+    let video_out = &trimmed.tracks[0];
+
+    assert_eq!(
+        video_out.samples.len(),
+        3,
+        "must keep samples 0..=2 (snapped back to the sync sample, then up to \
+         real pts 11000 which is < 12000) — a duration-summed reconstruction \
+         would instead wrongly keep 4 samples"
+    );
+    assert_eq!(
+        video_out.samples.last().unwrap().data,
+        vec![0x02u8; 8],
+        "last kept sample must be the one whose REAL dts (11000) falls in the window"
+    );
+}

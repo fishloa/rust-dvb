@@ -48,6 +48,18 @@ const SUBS_TYPE: u32 = u32::from_be_bytes(*b"subs");
 /// Grouping type `'roll'` (RollRecoveryEntry) — ISO/IEC 14496-12:2015 §10.6.
 pub const GROUPING_TYPE_ROLL: u32 = u32::from_be_bytes(*b"roll");
 
+/// Grouping type `'seig'` (CencSampleEncryptionInformationGroupEntry) —
+/// ISO/IEC 23001-7 (CENC). Maps a run of samples to a KID/IV-size/pattern
+/// override distinct from the track's `tenc` default, i.e. per-sample-group
+/// key rotation within a single track. Not parsed as a typed [`SgpdEntry`]
+/// variant by this module (it carries CENC-specific fields `tenc.rs` would
+/// need to interpret, not just a bare distance/count); exposed here purely
+/// as the FourCC constant a decrypt/encrypt path can test `grouping_type`
+/// against to detect the presence of key-rotation content it does not yet
+/// implement, rather than silently decrypting every sample with only the
+/// track default key (see `transmux::cenc_decrypt`, issue #990).
+pub const GROUPING_TYPE_SEIG: u32 = u32::from_be_bytes(*b"seig");
+
 // ---------------------------------------------------------------------------
 // ProducerReferenceTimeBox — prft (ISO/IEC 14496-12:2015 §8.16.5)
 // ---------------------------------------------------------------------------

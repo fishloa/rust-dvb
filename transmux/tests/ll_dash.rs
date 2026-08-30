@@ -365,6 +365,58 @@ fn ll_mpd_carries_availability_and_service_description() {
     }
 }
 
+/// issue #994: `inject_ll` used to match only the self-closing
+/// `<SegmentTemplate .../>` form (`Addressing::Number`). Under
+/// `Addressing::Timeline`, the base [`DashPackager`] instead renders a
+/// non-self-closing `<SegmentTemplate>` open tag with a `<SegmentTimeline>`
+/// child and a separate `</SegmentTemplate>` close tag — so the LL attributes
+/// were silently never injected for any Timeline-addressed MPD.
+#[test]
+fn ll_mpd_carries_availability_for_timeline_addressing() {
+    let media = demux_media();
+    // Any non-empty per-track duration list satisfies `Addressing::Timeline`
+    // (see `dash_mpd.rs`'s `timeline_addressing_without_segments_is_rejected`
+    // for what it rejects) — the durations' real values don't matter to this
+    // string-injection fix, only the resulting element shape does.
+    let segments: Vec<transmux::TrackSegments> = media
+        .tracks
+        .iter()
+        .map(|t| transmux::TrackSegments {
+            track_id: t.spec.track_id,
+            durations: vec![90_000, 90_000],
+        })
+        .collect();
+
+    let mut pkg = LlDashPackager::new(2.0, 0.5, 3000, "2026-01-01T00:00:00Z").unwrap();
+    pkg.base.addressing = transmux::Addressing::Timeline;
+    pkg.base.segments = segments;
+    let xml = pkg.package(&media).expect("LL MPD (Timeline addressing)");
+
+    let root = xml::parse(&xml);
+    let templates = descendants(&root, "SegmentTemplate");
+    assert!(!templates.is_empty(), "at least one SegmentTemplate");
+    for st in &templates {
+        // Confirm this really is the non-self-closing shape the fix targets.
+        assert!(
+            st.find("SegmentTimeline").is_some(),
+            "Timeline addressing must render a SegmentTimeline child"
+        );
+        assert_eq!(
+            st.attr("availabilityTimeComplete"),
+            Some("false"),
+            "availabilityTimeComplete must be injected on the Timeline SegmentTemplate open tag"
+        );
+        let ato: f64 = st
+            .attr("availabilityTimeOffset")
+            .expect(
+                "availabilityTimeOffset must be injected on the Timeline SegmentTemplate open tag",
+            )
+            .parse()
+            .expect("ATO numeric");
+        assert!((ato - 1.5).abs() < 1e-6, "ATO = seg - chunk = 2.0 - 0.5");
+    }
+}
+
 // ===========================================================================
 // Test 5 — keyframe-aligned segment starts preserved
 // ===========================================================================

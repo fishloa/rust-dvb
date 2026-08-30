@@ -219,4 +219,19 @@ pub enum Error {
         /// The configured cap, in bytes.
         cap: usize,
     },
+
+    /// The input needs a feature this crate does not implement yet.
+    ///
+    /// Distinct from [`Error::UnsupportedCodec`]/[`Error::UnsupportedCencScheme`]
+    /// (which name a specific codec/scheme this crate has no handling for at
+    /// all): this variant is for a *partially* supported wire feature where
+    /// silently ignoring the unimplemented part would produce a plausible but
+    /// wrong result rather than an obvious failure. E.g. CENC 'seig' sample-group
+    /// key rotation (ISO/IEC 23001-7 §4.1/Annex A: per-sample-group KID
+    /// override via `sgpd`/`sbgp`) — decrypting such content with only the
+    /// track's default `tenc.default_KID` produces garbage for every sample
+    /// whose group overrides the key, with no structural signal that anything
+    /// went wrong (issue #990).
+    #[error("unsupported feature: {0}")]
+    UnsupportedFeature(&'static str),
 }

@@ -464,22 +464,31 @@ fn validate_media_inner(bytes: &[u8], issues: &mut Vec<ConformanceIssue>) -> Opt
             let moof_size = moof_bx.header.size;
             // mdat header size: the box header preceding `bx.body`.
             let mdat_hdr = top[mp + 1].1.header.header_size() as u64;
-            let mdat_payload_end = moof_size + mdat_hdr + mdat_body.len() as u64;
+            // mdat payload bytes live at [moof_and_mdat_header_size ..
+            // mdat_payload_end] from the moof start; a `data_offset` below
+            // that lower bound points into the moof (or the mdat's own
+            // header) rather than at real sample data.
+            let moof_and_mdat_header_size = moof_size + mdat_hdr;
+            let mdat_payload_end = moof_and_mdat_header_size + mdat_body.len() as u64;
             for (ti, traf) in info.trafs.iter().enumerate() {
                 if let Some(off) = traf.min_data_offset {
                     let start = off;
                     let end = start + traf.total_size as i64;
-                    // Valid data lives at [moof_start .. mdat_payload_end].
-                    if start < 0 || (end as u64) > mdat_payload_end {
+                    // Valid data lives at [moof_and_mdat_header_size .. mdat_payload_end].
+                    if start < 0
+                        || (start as u64) < moof_and_mdat_header_size
+                        || (end as u64) > mdat_payload_end
+                    {
                         issues.push(ConformanceIssue::error(
                             "media.mdat.overrun",
                             format!(
                                 "moof #{}, traf #{}: trun samples span offset {}..{} but the \
-                                 mdat payload ends at {} (ISO/IEC 14496-12 §8.8.8)",
+                                 mdat payload is [{}..{}) (ISO/IEC 14496-12 §8.8.8)",
                                 mp + 1,
                                 ti + 1,
                                 start,
                                 end,
+                                moof_and_mdat_header_size,
                                 mdat_payload_end
                             ),
                         ));

@@ -1083,3 +1083,56 @@ fn splice_insert_rebases_real_fixture_onto_the_join() {
         "the resumed base starts exactly where the rebased ad ends"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Test — #992: `match_tracks` must never map two `a` tracks onto the same `b`
+// track (dual-audio content with only partial `track_id` overlap).
+// ---------------------------------------------------------------------------
+
+/// `a` has two "audio" (Data stand-in) tracks: id 7 and id 99. `b` has two:
+/// id 1 and id 7. `a`'s id-7 track finds its id match at `b`'s *second* slot
+/// (`b[1]`); `a`'s id-99 track has no id match anywhere in `b` and falls back
+/// to its own position (`a` index 1) — which is the exact `b` index the id
+/// match above just claimed. A `match_tracks` with no "claimed" tracking maps
+/// BOTH `a` tracks onto `b[1]` and never references `b[0]` at all — issue
+/// #992. With the fix, this must either (a) find a genuinely injective
+/// mapping, or (b) fail outright — anything but silently colliding.
+#[test]
+fn match_tracks_never_collides_on_partial_id_overlap() {
+    let a0 = data_track(7, 1000, b'A', 3, 1000, DataCarriage::Pes, true);
+    let a1 = data_track(99, 1000, b'B', 3, 1000, DataCarriage::Pes, true);
+    let b0 = data_track(1, 1000, b'C', 3, 1000, DataCarriage::Pes, true);
+    let b1 = data_track(7, 1000, b'D', 3, 1000, DataCarriage::Pes, true);
+
+    let a = Media::new(vec![a0, a1], 1000);
+    let b = Media::new(vec![b0, b1], 1000);
+
+    match concat(&a, &b) {
+        // Ambiguous input (a[1] has no real counterpart in b once a[0]
+        // claims its only id match) is safely rejected rather than guessed.
+        Err(_) => {}
+        Ok(res) => {
+            // If it *does* succeed, the two output tracks must not have been
+            // spliced against the same `b` track — the pre-fix bug fed
+            // `b[1]`'s tag (`D`) into both, dropping `b[0]`'s tag (`C`)
+            // entirely.
+            assert_eq!(res.media.tracks.len(), 2, "both a tracks survive");
+            for t in &res.media.tracks {
+                let tags: std::collections::BTreeSet<u8> =
+                    t.samples.iter().map(|s| s.data[0]).collect();
+                assert_eq!(
+                    tags.len(),
+                    1,
+                    "a spliced track must carry one b-side tag, not a mix"
+                );
+            }
+            let tag0 = res.media.tracks[0].samples[0].data[0];
+            let tag1 = res.media.tracks[1].samples[0].data[0];
+            assert_ne!(
+                tag0, tag1,
+                "two distinct a tracks must not be spliced against the same b track \
+                 (both got b's tag {tag0:#04x})"
+            );
+        }
+    }
+}
