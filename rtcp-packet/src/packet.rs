@@ -240,8 +240,16 @@ impl CommonHeader {
 /// Compute the header `length` field (32-bit words − 1) for a body whose total
 /// serialized length (header included) is `total_len` bytes. `total_len` is a
 /// multiple of 4 for every RTCP packet this codec emits.
-fn length_words_minus_one(total_len: usize) -> u16 {
-    (total_len / WORD_LEN).saturating_sub(1) as u16
+///
+/// Returns [`Error::InvalidValue`] if the packet is too large for the 16-bit
+/// `length` field to represent (more than `0x1_0000` 32-bit words, i.e. 256 KiB).
+fn length_words_minus_one(total_len: usize) -> Result<u16> {
+    let words = (total_len / WORD_LEN).saturating_sub(1);
+    u16::try_from(words).map_err(|_| Error::InvalidValue {
+        field: "rtcp_length",
+        value: total_len as u64,
+        reason: "packet exceeds the 16-bit RTCP length field (max 262140 bytes)",
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -461,7 +469,7 @@ impl Serialize for SenderReport {
             });
         }
         let rc = check_report_count(&self.report_blocks)?;
-        let hdr = CommonHeader::new(rc, PT_SENDER_REPORT, length_words_minus_one(len));
+        let hdr = CommonHeader::new(rc, PT_SENDER_REPORT, length_words_minus_one(len)?);
         hdr.write(&mut buf[0..RTCP_HEADER_LEN]);
         let mut off = RTCP_HEADER_LEN;
         buf[off..off + 4].copy_from_slice(&self.ssrc.to_be_bytes());
@@ -539,7 +547,7 @@ impl Serialize for ReceiverReport {
             });
         }
         let rc = check_report_count(&self.report_blocks)?;
-        let hdr = CommonHeader::new(rc, PT_RECEIVER_REPORT, length_words_minus_one(len));
+        let hdr = CommonHeader::new(rc, PT_RECEIVER_REPORT, length_words_minus_one(len)?);
         hdr.write(&mut buf[0..RTCP_HEADER_LEN]);
         let mut off = RTCP_HEADER_LEN;
         buf[off..off + 4].copy_from_slice(&self.ssrc.to_be_bytes());
@@ -798,7 +806,7 @@ impl Serialize for SourceDescription {
         let hdr = CommonHeader::new(
             self.chunks.len() as u8,
             PT_SOURCE_DESCRIPTION,
-            length_words_minus_one(len),
+            length_words_minus_one(len)?,
         );
         hdr.write(&mut buf[0..RTCP_HEADER_LEN]);
         let mut off = RTCP_HEADER_LEN;
@@ -954,7 +962,7 @@ impl Serialize for Bye {
         let hdr = CommonHeader::new(
             self.sources.len() as u8,
             PT_BYE,
-            length_words_minus_one(len),
+            length_words_minus_one(len)?,
         );
         hdr.write(&mut buf[0..RTCP_HEADER_LEN]);
         let mut off = RTCP_HEADER_LEN;
@@ -1059,7 +1067,7 @@ impl Serialize for App {
                 reason: "exceeds 5-bit subtype field",
             });
         }
-        let hdr = CommonHeader::new(self.subtype, PT_APP, length_words_minus_one(len));
+        let hdr = CommonHeader::new(self.subtype, PT_APP, length_words_minus_one(len)?);
         hdr.write(&mut buf[0..RTCP_HEADER_LEN]);
         let mut off = RTCP_HEADER_LEN;
         buf[off..off + 4].copy_from_slice(&self.ssrc.to_be_bytes());
@@ -1507,6 +1515,29 @@ mod tests {
         assert_eq!(RtcpPacketType::SenderReport.to_string(), "SR");
         assert_eq!(RtcpPacketType::Unknown(207).to_string(), "reserved(0xCF)");
         assert_eq!(SdesItemType::CName.to_string(), "CNAME");
+    }
+
+    #[test]
+    fn app_oversized_payload_rejected_not_wrapped() {
+        // total_len = 12 (header + ssrc/name) + data.len(); pick data.len() so
+        // total_len/WORD_LEN - 1 overflows u16 (> 65535) instead of silently
+        // wrapping via `as u16` truncation.
+        let app = App {
+            subtype: 0,
+            ssrc: 1,
+            name: *b"BIGP",
+            data: vec![0u8; 262_136],
+        };
+        let len = app.serialized_len();
+        let mut buf = vec![0u8; len];
+        let err = app.serialize_into(&mut buf).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::InvalidValue {
+                field: "rtcp_length",
+                ..
+            }
+        ));
     }
 
     #[test]
