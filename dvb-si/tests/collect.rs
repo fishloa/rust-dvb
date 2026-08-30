@@ -55,6 +55,36 @@ fn eit_schedule_section_with_version(
     bytes
 }
 
+/// Build one EIT schedule section with explicit section-numbering fields, for
+/// exercising the `segment_last_section_number` sparse-segment completion
+/// logic directly (issue #971).
+#[allow(clippy::too_many_arguments)]
+fn eit_schedule_section_sparse(
+    table_id: u8,
+    last_table_id: u8,
+    section_number: u8,
+    last_section_number: u8,
+    segment_last_section_number: u8,
+) -> Vec<u8> {
+    let eit = EitSection {
+        kind: EitKind::ScheduleActual,
+        table_id,
+        service_id: 0x0100,
+        version_number: 4,
+        current_next_indicator: true,
+        section_number,
+        last_section_number,
+        transport_stream_id: 0x2000,
+        original_network_id: 0x0001,
+        segment_last_section_number,
+        last_table_id,
+        events: vec![],
+    };
+    let mut bytes = vec![0u8; eit.serialized_len()];
+    eit.serialize_into(&mut bytes).unwrap();
+    bytes
+}
+
 fn pat_section(section_number: u8, last_section_number: u8, pid: u16) -> Vec<u8> {
     pat_section_versioned(2, section_number, last_section_number, pid)
 }
@@ -265,6 +295,45 @@ fn collector_emits_complete_once_then_none() {
         collector.push_section(&section0).unwrap().is_none(),
         "re-pushing an earlier section does not re-emit (emit-once)",
     );
+}
+
+// Issue #971: a broadcast that leaves an EIT schedule segment empty sends only
+// one section for that whole 8-section segment (with `segment_last_section_number`
+// equal to its own section_number), never sections 1..=7 of it. A completeness
+// check that demands every slot in `0..=last_section_number` would wait for
+// those never-transmitted sections forever. Here `last_section_number = 9`
+// spans two segments: segment 0 (sections 0..=7) is sparse and only section 0
+// ever arrives; segment 1 (sections 8..=15) uses just its first two sections
+// (8, 9), with `segment_last_section_number = 9`. Sections 1..=7 never exist on
+// the wire.
+#[test]
+fn eit_schedule_collector_completes_sparse_segment_without_all_slots() {
+    let table_id = EIT_50;
+    let section0 = eit_schedule_section_sparse(table_id, table_id, 0, 9, 0);
+    let section8 = eit_schedule_section_sparse(table_id, table_id, 8, 9, 9);
+    let section9 = eit_schedule_section_sparse(table_id, table_id, 9, 9, 9);
+
+    let mut collector = EitCollector::new();
+    assert!(
+        collector.push_section(&section0).unwrap().is_none(),
+        "segment 0 alone (sparse, no more sections coming) must not complete the set",
+    );
+    assert!(
+        collector.push_section(&section8).unwrap().is_none(),
+        "segment 1 partially filled must not complete the set",
+    );
+
+    let completed = collector
+        .push_section(&section9)
+        .unwrap()
+        .expect("set completes once every section named by an observed segment has arrived");
+    let CompletedEit::Schedule(schedule) = completed else {
+        panic!("expected completed schedule EIT");
+    };
+    assert_eq!(schedule.table_sets().len(), 1);
+    // Only the 3 sections actually transmitted are retained — sections 1..=7
+    // were never sent and must not be conjured as empty placeholders.
+    assert_eq!(schedule.table_sets()[0].section_bytes().len(), 3);
 }
 
 // A new `version_number` for the same logical table drops the stale partial,

@@ -148,7 +148,7 @@ impl EitCollector {
             partial.reset(meta);
         }
 
-        partial.insert(eit.section_number, bytes)?;
+        partial.insert(eit.section_number, eit.segment_last_section_number, bytes)?;
         let complete = match partial.to_complete() {
             Some(complete) => complete,
             None => return Ok(None),
@@ -307,12 +307,26 @@ struct EitSectionSetMeta {
     last_section_number: u8,
 }
 
+/// Number of section numbers grouped into one 3-hour EIT schedule segment
+/// (ETSI EN 300 468 §5.2.4: `segment_last_section_number`).
+const EIT_SEGMENT_SIZE: u8 = 8;
+
 #[derive(Debug)]
 struct PartialEitSectionSet {
     meta: EitSectionSetMeta,
     slots: Vec<Option<Arc<[u8]>>>,
     filled: usize,
     emitted: bool,
+    /// Per-segment (`section_number / 8`) `segment_last_section_number` as
+    /// observed from any section received from that segment.
+    ///
+    /// Present/following EITs and small schedules never need more than one
+    /// entry here; full EIT-schedule sub-tables span up to 32 segments. A
+    /// sparse segment (no events) still transmits exactly one section — with
+    /// `segment_last_section_number` equal to that segment's first section —
+    /// so this map always gets populated for every segment that will ever
+    /// exist, without waiting for 8 sections that will never arrive.
+    segment_ends: BTreeMap<u8, u8>,
 }
 
 impl PartialEitSectionSet {
@@ -323,6 +337,7 @@ impl PartialEitSectionSet {
             slots: vec![None; len],
             filled: 0,
             emitted: false,
+            segment_ends: BTreeMap::new(),
         }
     }
 
@@ -330,7 +345,12 @@ impl PartialEitSectionSet {
         *self = Self::new(meta);
     }
 
-    fn insert(&mut self, section_number: u8, bytes: Arc<[u8]>) -> CollectResult<bool> {
+    fn insert(
+        &mut self,
+        section_number: u8,
+        segment_last_section_number: u8,
+        bytes: Arc<[u8]>,
+    ) -> CollectResult<bool> {
         let index = section_number as usize;
         if let Some(existing) = &self.slots[index] {
             if existing.as_ref() == bytes.as_ref() {
@@ -345,11 +365,43 @@ impl PartialEitSectionSet {
         self.slots[index] = Some(bytes);
         self.filled += 1;
         self.emitted = false;
+        self.segment_ends.insert(
+            section_number / EIT_SEGMENT_SIZE,
+            segment_last_section_number,
+        );
         Ok(true)
     }
 
+    /// Whether every section that this section set's observed segments
+    /// declare (via `segment_last_section_number`) has been received.
+    ///
+    /// Unlike a plain PSI/SI table, an EIT schedule sub-table need not fill
+    /// every slot in `0..=last_section_number` — a segment that carries no
+    /// events transmits only its first section, with
+    /// `segment_last_section_number` naming that same section (ETSI EN 300
+    /// 468 §5.2.4). So completeness is judged per 8-section segment: once any
+    /// section from a segment has arrived, its `segment_last_section_number`
+    /// tells us exactly which sections in that segment to expect, rather than
+    /// assuming all 8.
     fn complete(&self) -> bool {
-        self.filled == self.slots.len()
+        let last_segment = self.meta.last_section_number / EIT_SEGMENT_SIZE;
+        for segment in 0..=last_segment {
+            let Some(&segment_last_raw) = self.segment_ends.get(&segment) else {
+                // No section from this segment has arrived yet, so we don't
+                // even know how many sections to expect from it.
+                return false;
+            };
+            let segment_start = segment * EIT_SEGMENT_SIZE;
+            let segment_last = segment_start
+                .saturating_add(segment_last_raw % EIT_SEGMENT_SIZE)
+                .min(self.meta.last_section_number);
+            for section_number in segment_start..=segment_last {
+                if self.slots[section_number as usize].is_none() {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     fn to_complete(&self) -> Option<CompleteSectionSet> {
@@ -357,15 +409,10 @@ impl PartialEitSectionSet {
             return None;
         }
 
-        let sections = self
-            .slots
-            .iter()
-            .map(|slot| {
-                slot.as_ref()
-                    .expect("complete EIT set has no holes")
-                    .clone()
-            })
-            .collect();
+        // Only the sections that actually exist on the wire are collected —
+        // a sparse segment legitimately never transmits some of the slots in
+        // `0..=last_section_number`, so holes here are expected, not a bug.
+        let sections = self.slots.iter().filter_map(Clone::clone).collect();
         Some(CompleteSectionSet {
             meta: SectionSetMeta {
                 key: SectionSetKey {
