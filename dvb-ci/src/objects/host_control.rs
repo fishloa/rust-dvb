@@ -84,6 +84,8 @@ pub struct Replace {
 
 // replacement_ref(1) + reserved/replaced_PID(2) + reserved/replacement_PID(2).
 const REPLACE_BODY: usize = 5;
+/// Maximum value the 13-bit `replaced_PID`/`replacement_PID` fields can hold.
+const MAX_PID: u16 = 0x1FFF;
 
 impl<'a> Parse<'a> for Replace {
     type Error = Error;
@@ -113,6 +115,12 @@ impl Serialize for Replace {
         super::apdu_len(REPLACE_BODY)
     }
     fn serialize_into(&self, buf: &mut [u8]) -> Result<usize> {
+        if self.replaced_pid > MAX_PID || self.replacement_pid > MAX_PID {
+            return Err(Error::InvalidObject {
+                what: "replace",
+                reason: "PID exceeds 13-bit range (0x1FFF)",
+            });
+        }
         let mut pos = super::write_apdu_header(tag::REPLACE, REPLACE_BODY, buf)?;
         buf[pos] = self.replacement_ref;
         // reserved(3)='111', replaced_PID(13).
@@ -242,6 +250,25 @@ mod tests {
         let mut other = r;
         other.replacement_pid = 0x0001;
         assert_ne!(bytes, other.to_bytes());
+    }
+
+    #[test]
+    fn replace_oversized_pid_rejected_not_truncated() {
+        let r = Replace {
+            replacement_ref: 0x01,
+            replaced_pid: 0x2010, // 14-bit value, out of 13-bit range
+            replacement_pid: 0x0001,
+        };
+        let err = r.serialize_into(&mut [0u8; 32]).unwrap_err();
+        assert!(matches!(err, Error::InvalidObject { .. }));
+
+        let r2 = Replace {
+            replacement_ref: 0x01,
+            replaced_pid: 0x0001,
+            replacement_pid: 0x2010, // 14-bit value, out of 13-bit range
+        };
+        let err2 = r2.serialize_into(&mut [0u8; 32]).unwrap_err();
+        assert!(matches!(err2, Error::InvalidObject { .. }));
     }
 
     #[test]

@@ -338,23 +338,19 @@ fn build_info(duration_ticks: f64) -> Vec<u8> {
 
 /// One `Seek` entry: the target element's ID, and its byte offset relative to
 /// the `Segment` payload start, written at [`SEEK_POSITION_FIXED_WIDTH`].
-fn seek_entry(target_id: &[u8], position: u32) -> Vec<u8> {
+fn seek_entry(target_id: &[u8], position: u64) -> Vec<u8> {
     master(
         &ID_SEEK,
         &[
             binary_elem(&ID_SEEK_ID, target_id),
-            fixed_uint_elem(
-                &ID_SEEK_POSITION,
-                position as u64,
-                SEEK_POSITION_FIXED_WIDTH,
-            ),
+            fixed_uint_elem(&ID_SEEK_POSITION, position, SEEK_POSITION_FIXED_WIDTH),
         ],
     )
 }
 
 /// Build `SeekHead`, indexing `Info` and `Tracks` at the given byte offsets
 /// (relative to the `Segment` payload start).
-fn build_seek_head(pos_info: u32, pos_tracks: u32) -> Vec<u8> {
+fn build_seek_head(pos_info: u64, pos_tracks: u64) -> Vec<u8> {
     master(
         &ID_SEEK_HEAD,
         &[
@@ -653,7 +649,7 @@ fn build_cluster(events: &[BlockEvent], tracks: &[Track]) -> Vec<u8> {
 /// audio sample in this IR is a sync sample, so indexing them would defeat
 /// the point of an index). Returns an empty `Vec` (nothing written) when
 /// there is no video keyframe to index.
-fn build_cues(clusters: &[Vec<BlockEvent>], cluster_offsets: &[u32]) -> Vec<u8> {
+fn build_cues(clusters: &[Vec<BlockEvent>], cluster_offsets: &[u64]) -> Vec<u8> {
     let mut cue_points: Vec<Vec<u8>> = Vec::new();
     for (cluster, &offset) in clusters.iter().zip(cluster_offsets) {
         for ev in cluster {
@@ -662,7 +658,7 @@ fn build_cues(clusters: &[Vec<BlockEvent>], cluster_offsets: &[u32]) -> Vec<u8> 
                     &ID_CUE_TRACK_POSITIONS,
                     &[
                         uint_elem(&ID_CUE_TRACK, ev.track_number),
-                        uint_elem(&ID_CUE_CLUSTER_POSITION, offset as u64),
+                        uint_elem(&ID_CUE_CLUSTER_POSITION, offset),
                     ],
                 );
                 cue_points.push(master(
@@ -803,8 +799,8 @@ impl Package for MkvMux {
         // SeekHead: sized from a placeholder build (see SEEK_POSITION_FIXED_WIDTH),
         // then rebuilt with the real Info/Tracks offsets at the same size.
         let seekhead_placeholder = build_seek_head(0, 0);
-        let pos_info = seekhead_placeholder.len() as u32;
-        let pos_tracks = pos_info + info_bytes.len() as u32;
+        let pos_info = seekhead_placeholder.len() as u64;
+        let pos_tracks = pos_info + info_bytes.len() as u64;
         let seekhead_bytes = build_seek_head(pos_info, pos_tracks);
         debug_assert_eq!(
             seekhead_bytes.len(),
@@ -814,12 +810,12 @@ impl Package for MkvMux {
 
         let clusters = build_clusters(&events, has_video);
         let mut cluster_bytes: Vec<Vec<u8>> = Vec::with_capacity(clusters.len());
-        let mut cluster_offsets: Vec<u32> = Vec::with_capacity(clusters.len());
-        let mut running_offset = pos_tracks + tracks_bytes.len() as u32;
+        let mut cluster_offsets: Vec<u64> = Vec::with_capacity(clusters.len());
+        let mut running_offset = pos_tracks + tracks_bytes.len() as u64;
         for cluster in &clusters {
             cluster_offsets.push(running_offset);
             let bytes = build_cluster(cluster, &media.tracks);
-            running_offset += bytes.len() as u32;
+            running_offset += bytes.len() as u64;
             cluster_bytes.push(bytes);
         }
 

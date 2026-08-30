@@ -44,7 +44,7 @@ srt-runtime       = { path = "../srt-runtime",   version = "0.4", features = ["t
 # `HlsOrigin::closed_segments()`, which do not exist in the published
 # 0.5.0 (verified: 0 hits at the hls-runtime-v0.5.0 tag). hls-runtime
 # must publish 0.6.0 before multimux can publish.
-hls-runtime       = { path = "../hls-runtime",   version = "0.6", features = ["std", "tokio"] }
+hls-runtime       = { path = "../hls-runtime",   version = "0.7", features = ["std", "tokio"] }
 # Needed directly (not just via hls-runtime/transmux) by `source::hls_pull`
 # to recover `TrackSpec`s from a pulled stream's init segment via
 # `Fmp4Demux::unpackage` (the `Unpackage` trait) — issue #663 P3c.
@@ -138,6 +138,13 @@ dvb-si            = { path = "../dvb-si", version = "10", default-features = fal
 # `source::segment`'s MPTS test (issue #887). Promoted from
 # `[dev-dependencies]` because production code (`dvr.rs`) now needs it too.
 mpeg-ts           = { path = "../mpeg-ts", version = "0.4" }
+# Canonical timed-metadata event types (issue #969): `source::scte35` /
+# `route` ingest `timed_metadata::TimedEvent` values into the trunk's event
+# log, and `origin::resource::inject_segment_events` pattern-matches on
+# `timed_metadata::event::SourcePayload::Scte35`. A transitive dep through
+# `media-plane` alone cannot be named inside a pattern match (edition 2024
+# requires it be declared), hence the direct dependency.
+timed-metadata    = { path = "../timed-metadata", version = "0.5", default-features = false }
 
 [features]
 # `tls` is default-on: `rtsps://` sources should work out of the box. It pulls

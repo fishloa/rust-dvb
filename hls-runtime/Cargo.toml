@@ -1,6 +1,6 @@
 [package]
 name         = "hls-runtime"
-version      = "0.6.0"
+version      = "0.7.0"
 edition      = "2024"
 description  = "Sans-IO Low-Latency HLS (RFC 8216bis) client + server engines in one crate (blocking reload, part prefetch, rolling-window origin), with an optional tokio+reqwest IO adapter."
 license      = "MIT OR Apache-2.0"
@@ -20,6 +20,10 @@ transmux          = { path = "../transmux", version = "0.24", default-features =
 # HLS (M3U8) playlist syntax (issue #878): the client/origin engines parse
 # and render playlists via this crate directly rather than through `transmux`.
 broadcast-hls     = { path = "../broadcast-hls", version = "0.2", default-features = false }
+# `server::engine::HlsOrigin` renders SCTE-35 cues from the trunk's event
+# ring as `#EXT-X-DATERANGE` tag lines via `Timeline::with_anchor`/`to_daterange`
+# (issue #965). timed-metadata is `no_std`+`alloc`, so it does not force `std`.
+timed-metadata    = { path = "../timed-metadata", version = "0.5", default-features = false }
 thiserror         = { version = "2", default-features = false }
 serde             = { version = "1", optional = true, default-features = false, features = ["derive", "alloc"] }
 # Only pulled in by the `std` feature: `server::engine::HlsOrigin` renders

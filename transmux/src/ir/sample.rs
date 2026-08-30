@@ -197,7 +197,7 @@ impl Sample {
     /// offset).
     pub fn composition_offset(&self) -> i32 {
         match (self.dts, self.pts) {
-            (Some(d), Some(p)) => (p - d) as i32,
+            (Some(d), Some(p)) => (p - d).clamp(i32::MIN as i64, i32::MAX as i64) as i32,
             _ => 0,
         }
     }

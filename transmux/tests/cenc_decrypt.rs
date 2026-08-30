@@ -212,3 +212,127 @@ fn decrypt_via_trait() {
     // First NAL should be a valid AUD/SPS-class NAL (top bit zero: forbidden_zero_bit).
     assert_eq!(nals[0][0] & 0x80, 0, "decrypted NAL header sane");
 }
+
+// ---------------------------------------------------------------------------
+// issue #990: a `seig` (CENC key-rotation) sample group must be rejected
+// explicitly, not silently decrypted with only the track's default KID.
+// ---------------------------------------------------------------------------
+
+const CONTAINERS: &[&[u8; 4]] = &[b"moov", b"trak", b"mdia", b"minf", b"stbl"];
+
+/// Recursively locate a box of `fourcc` within `[lo, hi)`. Returns
+/// `(abs_offset, box_size)`. Descends into known container boxes.
+fn find_box_range(data: &[u8], lo: usize, hi: usize, fourcc: &[u8; 4]) -> Option<(usize, usize)> {
+    let mut off = lo;
+    while off + 8 <= hi {
+        let size =
+            u32::from_be_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]) as usize;
+        if size < 8 || off + size > hi {
+            break;
+        }
+        let t = [data[off + 4], data[off + 5], data[off + 6], data[off + 7]];
+        if &t == fourcc {
+            return Some((off, size));
+        }
+        if CONTAINERS.contains(&&t)
+            && let Some(found) = find_box_range(data, off + 8, off + size, fourcc)
+        {
+            return Some(found);
+        }
+        off += size;
+    }
+    None
+}
+
+/// Grow (in place, ORIGINAL coordinate space) the 32-bit size of every
+/// container box whose original span contains the insertion point `at`
+/// (interior, or exactly at the box's own end — i.e. "append a new last
+/// child").
+fn grow_ancestors(data: &mut [u8], lo: usize, hi: usize, at: usize, grow: usize) {
+    let mut off = lo;
+    while off + 8 <= hi {
+        let size =
+            u32::from_be_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]) as usize;
+        if size < 8 || off + size > hi {
+            break;
+        }
+        let t = [data[off + 4], data[off + 5], data[off + 6], data[off + 7]];
+        // Only an actual container can be a genuine ancestor: a leaf box
+        // (e.g. `saiz`) whose span happens to *end* exactly at the insertion
+        // point (because it's the last child of the container we're
+        // inserting into) must NOT have its own size grown — only real
+        // ancestors up the tree do.
+        if CONTAINERS.contains(&&t) && off < at && at <= off + size {
+            let new_size = (size + grow) as u32;
+            data[off..off + 4].copy_from_slice(&new_size.to_be_bytes());
+            grow_ancestors(data, off + 8, off + size, at, grow);
+        }
+        off += size;
+    }
+}
+
+/// Insert `extra` bytes at absolute offset `at` in `data`, growing every
+/// ancestor container's size field so the file stays structurally valid.
+fn insert_growing_ancestors(data: &[u8], at: usize, extra: &[u8]) -> Vec<u8> {
+    let mut out = data.to_vec();
+    grow_ancestors(&mut out, 0, data.len(), at, extra.len());
+    out.splice(at..at, extra.iter().copied());
+    out
+}
+
+/// Real `cenc.mp4` fixture, but with a `seig`-typed `sgpd` box appended as
+/// the last child of the (single, protected) track's `stbl` — the shape a
+/// real CENC key-rotation asset would carry (ISO/IEC 23001-7
+/// CencSampleEncryptionInformationGroupEntry). Built by growing the real
+/// fixture's box tree in place (real `moov`/`trak`/`stbl` bytes, not a
+/// hand-rolled file), so this exercises the actual box-navigation path
+/// `harvest_track` walks, not a synthetic stand-in for it.
+fn cenc_mp4_with_seig_sgpd() -> Vec<u8> {
+    use broadcast_common::Serialize;
+    use transmux::sample_groups::{GROUPING_TYPE_SEIG, SampleGroupDescriptionBox, SgpdEntry};
+
+    let file = read(CENC_MP4);
+    let (stbl_start, stbl_size) =
+        find_box_range(&file, 0, file.len(), b"stbl").expect("fixture has a stbl");
+    let insert_at = stbl_start + stbl_size; // append as stbl's new last child
+
+    let sgpd = SampleGroupDescriptionBox {
+        version: 1,
+        flags: 0,
+        grouping_type: GROUPING_TYPE_SEIG,
+        default_length: 0,
+        // The internal seig entry layout (KID/IV-size/pattern override) is
+        // not typed by this crate (see `sample_groups.rs` docs) — only
+        // `grouping_type` needs to be real for the detector under test, so
+        // an opaque placeholder payload is enough here.
+        entries: vec![SgpdEntry::Unknown(vec![0u8; 20])],
+    };
+    let sgpd_bytes = sgpd.to_bytes();
+
+    insert_growing_ancestors(&file, insert_at, &sgpd_bytes)
+}
+
+/// A `seig` sample group in `stbl` must be rejected outright, not silently
+/// decrypted with the track's default `tenc.default_KID` alone.
+#[test]
+fn seig_sample_group_is_rejected_not_silently_decrypted() {
+    let file = cenc_mp4_with_seig_sgpd();
+
+    let err = CencDecryptor::from_fmp4(&file).expect_err(
+        "a track with a seig sample group must be rejected, not silently \
+         accepted for single-key decryption",
+    );
+    assert!(
+        matches!(err, transmux::Error::UnsupportedFeature(_)),
+        "expected Error::UnsupportedFeature, got {err:?}"
+    );
+}
+
+/// Sanity: the *unmodified* real fixture (no seig group) still decrypts fine
+/// — the detector must not be a false-positive trap that rejects every
+/// sgpd-bearing track regardless of grouping type.
+#[test]
+fn non_seig_content_is_unaffected() {
+    let file = read(CENC_MP4);
+    CencDecryptor::from_fmp4(&file).expect("plain cenc.mp4 (no seig) must still decrypt");
+}

@@ -727,11 +727,26 @@ impl HlsOrigin {
         // `#EXT-X-MAP`: unconditional under Fmp4 (RFC 8216bis §3.1.2 MUST);
         // omitted under MpegTs by default (§3.1.1's PAT/PMT-or-MAP
         // disjunction — see `Container`'s own doc for why this is a default,
-        // not a hard restriction).
-        let extra_tags = match self.container {
+        // not a hard restriction). Then any SCTE-35 cues published to the
+        // trunk's event ring for this window render as `#EXT-X-DATERANGE`
+        // tag lines (issue #965): they carry a wall-clock `START-DATE` only
+        // once the trunk's `time_anchor` has been set, so events are
+        // silently skipped while the anchor is absent (their `to_daterange`
+        // fails the same way it does for a non-SCTE-35 source).
+        let mut extra_tags = match self.container {
             Container::Fmp4 => vec![format!("#EXT-X-MAP:URI=\"init-{track_id}.mp4\"")],
             Container::MpegTs => Vec::new(),
         };
+        if let Some(anchor) = self.trunk.time_anchor() {
+            let timeline = timed_metadata::Timeline::with_anchor(anchor);
+            for seg in &window.segments {
+                for entry in self.trunk.events_in_segment(seg.sequence_number) {
+                    if let Ok(dr) = timeline.to_daterange(&entry.event) {
+                        extra_tags.push(dr.to_tag_line());
+                    }
+                }
+            }
+        }
         let low_latency = low_latency_enabled.then(|| {
             let part_target_ms = self
                 .part_target_ms
@@ -874,8 +889,9 @@ impl ServedEgress for HlsOrigin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use media_plane::trunk::TrunkConfig;
+    use media_plane::trunk::{EventAnchor, TrunkConfig};
     use std::time::{Duration, Instant};
+    use timed_metadata::{MediaTime, TimeAnchor};
     use transmux::SegmentMeta;
 
     fn nz(n: usize) -> NonZeroUsize {
@@ -929,6 +945,110 @@ mod tests {
             Timestamp::from_nanos(0),
             AwaitPolicy::new(Timestamp::from_nanos(0)),
         )
+    }
+
+    // --- EXT-X-DATERANGE rendering from the trunk event ring (#965) -----
+
+    /// MUTATION VERIFIED: dropping the `events_in_segment` loop (or the
+    /// `time_anchor()` gate) from `render_playlist` makes all three
+    /// assertions below fail — the playlist no longer carries the
+    /// `#EXT-X-DATERANGE` line, its `SCTE35-OUT=` attribute, or its
+    /// `ID="2002"`. `if let Ok(dr)` (rather than `unwrap`) is the deliberate
+    /// skip, not asserted here, because `time_anchor` is set in this test so
+    /// no event legitimately fails conversion.
+    #[test]
+    fn trunk_events_render_as_ext_x_daterange() {
+        // splice_insert, event_id=2002, pts=2_160_000 (~24s at 90kHz) — the
+        // same fixture timed-metadata's own timeline tests use.
+        let hex = "FC302100000000000000FFF01005000007D27FEF7F7E0020F580C0000000000088B9661D";
+        let splice_bytes: Vec<u8> = (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+            .collect();
+
+        let (trunk, origin, writer) = make_origin();
+
+        // Give the event log a wall-clock anchor so drafts can carry a
+        // START-DATE, and a media-clock one so the event resolves immediately.
+        writer.set_time_anchor(TimeAnchor {
+            pts_90k: 0,
+            utc_epoch_ms: 1_000_000_000_000,
+        });
+
+        // Parse the splice into a TimedEvent and publish it to the event ring,
+        // Media-anchored at its own PTS (2_160_000, unwrapped on first call).
+        let mut timeline = timed_metadata::Timeline::new();
+        let ev = timeline.push_scte35(&splice_bytes).unwrap();
+        let trunk_writer = trunk.writer().expect("first trunk writer");
+        trunk_writer.publish_event(
+            ev.clone(),
+            EventAnchor::Media(ev.at.unwrap_or(MediaTime(0))),
+        );
+
+        // Segment 1 spans [0, 4_000_000) — includes the cue's PTS.
+        writer.note_segment_start(1, MediaTime(0));
+        writer.note_segment_start(2, MediaTime(4_000_000));
+        seg(&writer, 1, 4.0, false);
+
+        let playlist = origin.render_playlist(DEFAULT_TRACK_ID);
+        assert!(
+            playlist.contains("#EXT-X-DATERANGE"),
+            "playlist should contain EXT-X-DATERANGE, got: {playlist}"
+        );
+        assert!(
+            playlist.contains("SCTE35-OUT="),
+            "daterange should carry SCTE35-OUT attribute: {playlist}"
+        );
+        assert!(
+            playlist.contains("ID=\"2002\""),
+            "daterange ID should be the event_id: {playlist}"
+        );
+    }
+
+    /// MUTATION VERIFIED: replacing the `if let Ok(dr)` guard in
+    /// `render_playlist` with a bare `timeline.to_daterange(&entry.event)`
+    /// (i.e. unwrapping the `Err`) makes this test fail — an Emsg-sourced
+    /// event that `to_daterange` rejects ("event is not SCTE-35-sourced")
+    /// would panic `render_playlist` instead of being skipped. This test
+    /// pins that skip: with a time anchor set and the event inside the
+    /// segment span, no `#EXT-X-DATERANGE` line may appear (and rendering
+    /// must not panic).
+    #[test]
+    fn non_scte35_events_are_silently_skipped() {
+        use timed_metadata::event::{EventKind, SourcePayload};
+        use timed_metadata::{MediaDuration, TimedEvent};
+
+        let (trunk, origin, writer) = make_origin();
+        writer.set_time_anchor(TimeAnchor {
+            pts_90k: 0,
+            utc_epoch_ms: 1_000_000_000_000,
+        });
+
+        // An Emsg-sourced event, Media-anchored inside segment 1's span — the
+        // kinds of event that legitimately cannot become a DATERANGE.
+        let emsg_ev = TimedEvent {
+            id: Some(7),
+            kind: EventKind::Unspecified,
+            at: Some(MediaTime(2_000_000)),
+            duration: Some(MediaDuration(2_000_000)),
+            source: SourcePayload::Emsg {
+                scheme_id_uri: "urn:example".to_string(),
+                value: "1".to_string(),
+                raw: vec![0x01, 0x02],
+            },
+        };
+        let trunk_writer = trunk.writer().expect("first trunk writer");
+        trunk_writer.publish_event(emsg_ev, EventAnchor::Media(MediaTime(2_000_000)));
+
+        writer.note_segment_start(1, MediaTime(0));
+        writer.note_segment_start(2, MediaTime(4_000_000));
+        seg(&writer, 1, 4.0, false);
+
+        let playlist = origin.render_playlist(DEFAULT_TRACK_ID);
+        assert!(
+            !playlist.contains("#EXT-X-DATERANGE"),
+            "no DATERANGE expected for a non-SCTE-35 event: {playlist}"
+        );
     }
 
     // --- master playlist (unaffected by the Trunk migration) -------------

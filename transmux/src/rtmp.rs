@@ -178,6 +178,13 @@ pub enum RtmpError {
     UnknownControlMsgType(u8),
     /// An AMF0 value used a marker this crate does not decode (§7 / AMF0 §2).
     UnsupportedAmf0Marker(u8),
+    /// An AMF0 String's byte length exceeds the 16-bit length prefix (§2.4).
+    /// This crate does not implement the AMF0 Long String type (§2.13) — the
+    /// caller must shorten the value.
+    AmfStringTooLong {
+        /// The string's byte length.
+        len: usize,
+    },
     /// A reassembled message declared a length that never completed.
     IncompleteMessage {
         /// The chunk stream id.
@@ -220,6 +227,12 @@ impl fmt::Display for RtmpError {
             }
             RtmpError::UnsupportedAmf0Marker(m) => {
                 write!(f, "RTMP unsupported AMF0 marker 0x{m:02X}")
+            }
+            RtmpError::AmfStringTooLong { len } => {
+                write!(
+                    f,
+                    "RTMP AMF0 string of {len} bytes exceeds the u16 length prefix (long string type not implemented)"
+                )
             }
             RtmpError::IncompleteMessage {
                 csid,
@@ -672,7 +685,11 @@ pub enum AmfValue {
 
 impl AmfValue {
     /// Encode this value (marker + payload) into `out` (AMF0 §2).
-    pub fn write_into(&self, out: &mut Vec<u8>) {
+    ///
+    /// Errors with [`RtmpError::AmfStringTooLong`] if a `String` (or an
+    /// `Object`/`EcmaArray` member key) exceeds the 16-bit AMF0 String length
+    /// prefix — this crate does not implement the AMF0 Long String type.
+    pub fn write_into(&self, out: &mut Vec<u8>) -> Result<(), RtmpError> {
         match self {
             AmfValue::Number(n) => {
                 out.push(amf0::NUMBER);
@@ -684,19 +701,20 @@ impl AmfValue {
             }
             AmfValue::String(s) => {
                 out.push(amf0::STRING);
-                write_amf0_string(out, s);
+                write_amf0_string(out, s)?;
             }
             AmfValue::Null => out.push(amf0::NULL),
             AmfValue::Object(members) => {
                 out.push(amf0::OBJECT);
-                write_amf0_members(out, members);
+                write_amf0_members(out, members)?;
             }
             AmfValue::EcmaArray(members) => {
                 out.push(amf0::ECMA_ARRAY);
                 out.extend_from_slice(&(members.len() as u32).to_be_bytes());
-                write_amf0_members(out, members);
+                write_amf0_members(out, members)?;
             }
         }
+        Ok(())
     }
 
     /// Decode one AMF0 value from the front of `input`, returning the value and
@@ -756,19 +774,24 @@ impl AmfValue {
     }
 }
 
-fn write_amf0_string(out: &mut Vec<u8>, s: &str) {
+fn write_amf0_string(out: &mut Vec<u8>, s: &str) -> Result<(), RtmpError> {
+    if s.len() > usize::from(u16::MAX) {
+        return Err(RtmpError::AmfStringTooLong { len: s.len() });
+    }
     out.extend_from_slice(&(s.len() as u16).to_be_bytes());
     out.extend_from_slice(s.as_bytes());
+    Ok(())
 }
 
-fn write_amf0_members(out: &mut Vec<u8>, members: &[(String, AmfValue)]) {
+fn write_amf0_members(out: &mut Vec<u8>, members: &[(String, AmfValue)]) -> Result<(), RtmpError> {
     for (k, v) in members {
-        write_amf0_string(out, k);
-        v.write_into(out);
+        write_amf0_string(out, k)?;
+        v.write_into(out)?;
     }
     // Object end: empty key + object-end marker (§2.11).
     out.extend_from_slice(&0u16.to_be_bytes());
     out.push(amf0::OBJECT_END);
+    Ok(())
 }
 
 /// Read a length-prefixed AMF0 UTF-8 string, returning (string, bytes consumed).
@@ -835,14 +858,18 @@ pub struct Command {
 
 impl Command {
     /// Encode the AMF0 command body (name + transaction id + arguments).
-    pub fn to_body(&self) -> Vec<u8> {
+    ///
+    /// Errors with [`RtmpError::AmfStringTooLong`] if the command name or any
+    /// argument String (or object/array member key) exceeds the AMF0 String
+    /// length prefix.
+    pub fn to_body(&self) -> Result<Vec<u8>, RtmpError> {
         let mut out = Vec::new();
-        AmfValue::String(self.name.clone()).write_into(&mut out);
-        AmfValue::Number(self.transaction_id).write_into(&mut out);
+        AmfValue::String(self.name.clone()).write_into(&mut out)?;
+        AmfValue::Number(self.transaction_id).write_into(&mut out)?;
         for a in &self.arguments {
-            a.write_into(&mut out);
+            a.write_into(&mut out)?;
         }
-        out
+        Ok(out)
     }
 
     /// Decode an AMF0 command body.
@@ -1331,7 +1358,7 @@ mod tests {
             ("fps".into(), AmfValue::Number(30.0)),
         ]);
         let mut out = Vec::new();
-        obj.write_into(&mut out);
+        obj.write_into(&mut out).unwrap();
         let (parsed, n) = AmfValue::parse(&out).unwrap();
         assert_eq!(parsed, obj);
         assert_eq!(n, out.len());

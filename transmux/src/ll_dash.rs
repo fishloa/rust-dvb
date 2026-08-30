@@ -817,17 +817,31 @@ impl LlDashPackager {
         let ato_str = format_secs(ato);
 
         // 1. Add availabilityTimeComplete + availabilityTimeOffset to every
-        //    self-closing <SegmentTemplate .../>.
+        //    <SegmentTemplate>: self-closing (`$Number$`/`Addressing::Number`
+        //    addressing) *and* the non-self-closing open tag
+        //    (`Addressing::Timeline` addressing, which renders
+        //    `<SegmentTemplate ...>` followed by a `<SegmentTimeline>` child
+        //    and a separate `</SegmentTemplate>` — see `dash.rs`'s
+        //    `write_segment_template`). Matching only the self-closing form
+        //    silently skipped every Timeline-addressed MPD (issue #994).
         let mut out = String::with_capacity(xml.len() + 256);
         for line in xml.lines() {
             let trimmed = line.trim_start();
-            if trimmed.starts_with("<SegmentTemplate") && line.trim_end().ends_with("/>") {
-                let end = line.trim_end();
+            let end = line.trim_end();
+            if trimmed.starts_with("<SegmentTemplate") && end.ends_with("/>") {
                 let head = &end[..end.len() - 2]; // strip "/>"
                 out.push_str(head);
                 out.push_str(" availabilityTimeOffset=\"");
                 out.push_str(&ato_str);
                 out.push_str("\" availabilityTimeComplete=\"false\"/>\n");
+            } else if trimmed.starts_with("<SegmentTemplate") && end.ends_with('>') {
+                // Non-self-closing open tag: keep it open (it has children),
+                // just inject the two attributes before the closing `>`.
+                let head = &end[..end.len() - 1]; // strip ">"
+                out.push_str(head);
+                out.push_str(" availabilityTimeOffset=\"");
+                out.push_str(&ato_str);
+                out.push_str("\" availabilityTimeComplete=\"false\">\n");
             } else {
                 out.push_str(line);
                 out.push('\n');

@@ -200,8 +200,13 @@ fn track_end_decode_time(track: &Track) -> u64 {
 
 /// Match `a.tracks[i]` to a track in `b`: by `track_id` first, else by index.
 ///
-/// Returns, for each track in `a`, the index of its counterpart in `b`. Errors
-/// if the track sets are incompatible (differing counts, an unmatched id, or a
+/// Returns, for each track in `a`, the index of its counterpart in `b`. The
+/// mapping is injective — each `b` track index is claimed by at most one `a`
+/// track — so dual-track content with no distinguishing `track_id` (e.g. two
+/// audio tracks both defaulting to id 0, or ids that happen to collide across
+/// `a`/`b`) cannot silently map two `a` tracks onto the same `b` track while
+/// leaving another `b` track unmatched (issue #992). Errors if the track sets
+/// are incompatible (differing counts, no unclaimed match available, or a
 /// matched pair whose codec kind or timescale differs).
 fn match_tracks(a: &Media, b: &Media) -> Result<Vec<usize>> {
     if a.tracks.len() != b.tracks.len() {
@@ -210,13 +215,21 @@ fn match_tracks(a: &Media, b: &Media) -> Result<Vec<usize>> {
         ));
     }
     let mut mapping = Vec::with_capacity(a.tracks.len());
+    // `b` track indices already claimed by an earlier `a` track.
+    let mut used = alloc::vec![false; b.tracks.len()];
     for (i, at) in a.tracks.iter().enumerate() {
-        // Prefer an id match; fall back to the same positional index.
+        // Prefer an unclaimed id match; fall back to the same positional
+        // index, but only if that too is still unclaimed.
         let bj = b
             .tracks
             .iter()
             .position(|bt| bt.spec.track_id == at.spec.track_id)
-            .unwrap_or(i);
+            .filter(|&idx| !used[idx])
+            .or_else(|| (!used[i]).then_some(i))
+            .ok_or(Error::InvalidInput(
+                "splice: no unclaimed matching track in b (non-injective match)",
+            ))?;
+        used[bj] = true;
         let bt = &b.tracks[bj];
         if codec_kind(&at.spec.config) != codec_kind(&bt.spec.config) {
             return Err(Error::InvalidInput(

@@ -103,12 +103,25 @@ pub fn parse_webvtt(input: &str) -> Result<ParsedWebVtt, Error> {
     // docs for why skipping this step lets a stray `\r` end up embedded in a
     // cue's text and then silently vanish on the next write.
     let normalized = normalize_line_endings(input);
-    let mut lines = normalized.lines();
+    let mut lines = normalized.lines().peekable();
     let header = lines.next().ok_or(Error::EmptyInput)?;
     if !(header == "WEBVTT" || header.starts_with("WEBVTT ") || header.starts_with("WEBVTT\t")) {
         return Err(Error::InvalidWebVtt(
             "missing WEBVTT signature on line 1".to_string(),
         ));
+    }
+
+    // An `X-TIMESTAMP-MAP` header line (RFC 8216 SS3.5) immediately follows
+    // the `WEBVTT` signature in HLS-segmented WebVTT (see
+    // `timed_metadata::webvtt::write_segment`, which emits exactly this).
+    // It's document metadata, not a cue identifier -- skip it here so the
+    // block grouper below never sees it and misreads it as an identifier
+    // line with no timing line after it (issue #974).
+    while lines
+        .peek()
+        .is_some_and(|line| line.starts_with("X-TIMESTAMP-MAP"))
+    {
+        lines.next();
     }
 
     // Group the remaining lines into blank-line-delimited blocks. This
@@ -311,6 +324,28 @@ mod tests {
         let parsed = parse_webvtt(doc).unwrap();
         assert_eq!(parsed.cues.len(), 1);
         assert_eq!(parsed.cues[0].text, "hi\n ");
+    }
+
+    #[test]
+    fn parse_webvtt_accepts_write_segment_output() {
+        // Issue #974: `write_segment` (HLS-segmented WebVTT, RFC 8216 SS3.5)
+        // emits an `X-TIMESTAMP-MAP` header line right after `WEBVTT`.
+        // `parse_webvtt` used to misread it as a cue-identifier line and
+        // fail because no timing line followed it.
+        let cues = alloc::vec![Cue {
+            start: timed_metadata::MediaTime(9_090_000),
+            end: timed_metadata::MediaTime(9_180_000),
+            text: "hi".to_string(),
+        }];
+        let segment = write_segment(&cues, timed_metadata::MediaTime(9_000_000));
+        let parsed = parse_webvtt(&segment).unwrap();
+        assert!(!parsed.lossy);
+        assert_eq!(parsed.cues.len(), 1);
+        assert_eq!(parsed.cues[0].text, "hi");
+        // cue-local time = 90_000 ticks = 1.000s .. 2.000s (segment-relative,
+        // NOT the original absolute times -- write_segment rebases them).
+        assert_eq!(parsed.cues[0].start, timed_metadata::MediaTime(90_000));
+        assert_eq!(parsed.cues[0].end, timed_metadata::MediaTime(180_000));
     }
 
     #[test]

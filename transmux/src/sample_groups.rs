@@ -28,6 +28,7 @@
 //!   u16; version 1: `subsample_size` is u32.
 
 use crate::error::{Error, Result};
+use crate::init_segment::bounded_entry_count;
 use alloc::vec::Vec;
 
 use broadcast_common::{Parse, Serialize};
@@ -46,6 +47,18 @@ const SUBS_TYPE: u32 = u32::from_be_bytes(*b"subs");
 
 /// Grouping type `'roll'` (RollRecoveryEntry) — ISO/IEC 14496-12:2015 §10.6.
 pub const GROUPING_TYPE_ROLL: u32 = u32::from_be_bytes(*b"roll");
+
+/// Grouping type `'seig'` (CencSampleEncryptionInformationGroupEntry) —
+/// ISO/IEC 23001-7 (CENC). Maps a run of samples to a KID/IV-size/pattern
+/// override distinct from the track's `tenc` default, i.e. per-sample-group
+/// key rotation within a single track. Not parsed as a typed [`SgpdEntry`]
+/// variant by this module (it carries CENC-specific fields `tenc.rs` would
+/// need to interpret, not just a bare distance/count); exposed here purely
+/// as the FourCC constant a decrypt/encrypt path can test `grouping_type`
+/// against to detect the presence of key-rotation content it does not yet
+/// implement, rather than silently decrypting every sample with only the
+/// track default key (see `transmux::cenc_decrypt`, issue #990).
+pub const GROUPING_TYPE_SEIG: u32 = u32::from_be_bytes(*b"seig");
 
 // ---------------------------------------------------------------------------
 // ProducerReferenceTimeBox — prft (ISO/IEC 14496-12:2015 §8.16.5)
@@ -338,7 +351,28 @@ impl SampleGroupDescriptionBox {
             u32::from_be_bytes([body[c], body[c + 1], body[c + 2], body[c + 3]]) as usize;
         c += 4;
 
-        let mut entries = Vec::with_capacity(entry_count);
+        // Minimum bytes each entry can possibly consume, for bounding the
+        // up-front allocation against a hostile `entry_count` (#988): a v1
+        // per-entry `description_length` prefix (4 bytes) when
+        // `default_length` is 0, else `default_length` itself; 2 bytes for a
+        // v0 'roll' entry; 1 byte as a floor for the "consume the rest as one
+        // blob" v0 fallback.
+        let sgpd_min_entry_len: usize = if version == 1 {
+            if default_length == 0 {
+                4
+            } else {
+                default_length as usize
+            }
+        } else if grouping_type == GROUPING_TYPE_ROLL {
+            2
+        } else {
+            1
+        };
+        let mut entries = Vec::with_capacity(bounded_entry_count(
+            body.len().saturating_sub(c),
+            sgpd_min_entry_len,
+            entry_count,
+        ));
         for _ in 0..entry_count {
             // Determine entry length
             let entry_len: usize = if version == 1 && default_length == 0 {
@@ -580,7 +614,12 @@ impl SampleToGroupBox {
         let entry_count =
             u32::from_be_bytes([body[c], body[c + 1], body[c + 2], body[c + 3]]) as usize;
         c += 4;
-        let mut entries = Vec::with_capacity(entry_count);
+        // Each entry is a fixed 8 bytes (sample_count + group_description_index).
+        let mut entries = Vec::with_capacity(bounded_entry_count(
+            body.len().saturating_sub(c),
+            8,
+            entry_count,
+        ));
         for _ in 0..entry_count {
             if body.len() < c + 8 {
                 return Err(Error::BufferTooShort {
@@ -761,7 +800,14 @@ impl SubSampleInformationBox {
             u32::from_be_bytes([body[c], body[c + 1], body[c + 2], body[c + 3]]) as usize;
         c += 4;
         let ss_size_field = if version == 1 { 4usize } else { 2usize };
-        let mut entries = Vec::with_capacity(entry_count);
+        // Each entry's fixed header (sample_delta + subsample_count) is 6
+        // bytes; the variable-length subsample list is bounded separately
+        // below, per entry.
+        let mut entries = Vec::with_capacity(bounded_entry_count(
+            body.len().saturating_sub(c),
+            4 + 2,
+            entry_count,
+        ));
         for _ in 0..entry_count {
             if body.len() < c + 4 + 2 {
                 return Err(Error::BufferTooShort {
@@ -775,7 +821,11 @@ impl SubSampleInformationBox {
             let subsample_count = u16::from_be_bytes([body[c], body[c + 1]]) as usize;
             c += 2;
             let ss_wire = ss_size_field + 1 + 1 + 4;
-            let mut subsamples = Vec::with_capacity(subsample_count);
+            let mut subsamples = Vec::with_capacity(bounded_entry_count(
+                body.len().saturating_sub(c),
+                ss_wire,
+                subsample_count,
+            ));
             for _ in 0..subsample_count {
                 if body.len() < c + ss_wire {
                     return Err(Error::BufferTooShort {

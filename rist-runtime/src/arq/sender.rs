@@ -19,8 +19,23 @@
 //! attempt it literally" — [`super::MAX_RANGE_EXPANSION`] is this engine's
 //! throttle: any range beyond that many entries is truncated rather than
 //! expanded literally.
+//!
+//! # NACK-amplification lookup cost (#977)
+//!
+//! Truncating the *count* of expanded sequence numbers to
+//! [`super::MAX_RANGE_EXPANSION`] bounds the number of lookups per NACK, but
+//! each individual lookup still needs to be cheap: with the lookup buffer
+//! stored as a plain sent-order list, locating one sequence number is an
+//! O(n) linear scan, so `MAX_RANGE_EXPANSION` lookups against an n-deep
+//! buffer is O(`MAX_RANGE_EXPANSION` × n) — a single adversarial RangeNack
+//! (`Additional = 0xFFFF`) against a modestly deep buffer multiplies into
+//! tens of millions of comparisons. [`Sender`] instead indexes the buffer by
+//! sequence number (a [`alloc::collections::BTreeMap`], so this stays
+//! `no_std`+`alloc` without pulling in a hasher that needs `std`), with a
+//! side [`VecDeque`] recording insertion order purely for FIFO eviction —
+//! each lookup is O(log n) instead of O(n).
 
-use alloc::collections::VecDeque;
+use alloc::collections::{BTreeMap, VecDeque};
 use alloc::vec::Vec;
 
 use crate::nack::BLP_BIT_WIDTH;
@@ -51,9 +66,14 @@ struct SentPacket {
 }
 
 /// Sender-side lookup buffer for NACK-triggered retransmission (§5.3.3).
+///
+/// Indexed by sequence number (see the module doc's "NACK-amplification
+/// lookup cost" section): `by_seq` is the actual store and `order` is only
+/// insertion order, kept for FIFO eviction once `max_buffered` is exceeded.
 #[derive(Debug)]
 pub struct Sender {
-    buffer: VecDeque<SentPacket>,
+    by_seq: BTreeMap<u16, SentPacket>,
+    order: VecDeque<u16>,
     max_buffered: usize,
 }
 
@@ -66,27 +86,37 @@ impl Sender {
     /// is **implementation policy**, not a transcription of that relation.
     pub fn new(max_buffered: usize) -> Self {
         Sender {
-            buffer: VecDeque::new(),
+            by_seq: BTreeMap::new(),
+            order: VecDeque::new(),
             max_buffered: max_buffered.max(1),
         }
     }
 
     /// Number of packets currently retained for lookup.
     pub fn buffered_count(&self) -> usize {
-        self.buffer.len()
+        self.by_seq.len()
     }
 
     /// Record a freshly-sent packet so it can later be located and
     /// retransmitted (§5.3.3). Evicts the oldest buffered packet once
     /// `max_buffered` is exceeded.
     pub fn on_sent(&mut self, seq: u16, timestamp: u32, payload: &[u8]) {
-        self.buffer.push_back(SentPacket {
+        self.by_seq.insert(
             seq,
-            timestamp,
-            payload: payload.to_vec(),
-        });
-        while self.buffer.len() > self.max_buffered {
-            self.buffer.pop_front();
+            SentPacket {
+                seq,
+                timestamp,
+                payload: payload.to_vec(),
+            },
+        );
+        self.order.push_back(seq);
+        while self.by_seq.len() > self.max_buffered {
+            match self.order.pop_front() {
+                Some(oldest) => {
+                    self.by_seq.remove(&oldest);
+                }
+                None => break,
+            }
         }
     }
 
@@ -98,7 +128,7 @@ impl Sender {
         let mut out = Vec::new();
         for range in &nack.ranges {
             for s in expand_range(*range) {
-                if let Some(sent) = self.buffer.iter().find(|p| p.seq == s) {
+                if let Some(sent) = self.by_seq.get(&s) {
                     out.push(Retransmission {
                         seq: sent.seq,
                         timestamp: sent.timestamp,
@@ -116,7 +146,7 @@ impl Sender {
         let mut out = Vec::new();
         for fci in &nack.nacks {
             for s in expand_fci(*fci) {
-                if let Some(sent) = self.buffer.iter().find(|p| p.seq == s) {
+                if let Some(sent) = self.by_seq.get(&s) {
                     out.push(Retransmission {
                         seq: sent.seq,
                         timestamp: sent.timestamp,
@@ -248,5 +278,39 @@ mod tests {
         // way that panics or hangs; with nothing in the lookup buffer the
         // result is simply empty, but the point is this returns promptly.
         assert!(s.on_range_nack(&nack).is_empty());
+    }
+
+    /// #977 regression: with an O(n) linear scan per expanded sequence
+    /// number, a full-depth buffer plus an adversarial `additional = 0xFFFF`
+    /// RangeNack multiplies into ~4.3 billion comparisons (65536 lookups x
+    /// a 65536-deep buffer) — that would take many seconds to minutes, not
+    /// the sub-second bound asserted below. With the `BTreeMap` index each
+    /// lookup is O(log n), so the whole call stays fast even at this depth.
+    #[test]
+    fn range_nack_lookup_stays_fast_against_a_full_depth_buffer() {
+        let mut s = Sender::new(MAX_RANGE_EXPANSION);
+        for seq in 0..=u16::MAX {
+            s.on_sent(seq, u32::from(seq), b"x");
+        }
+        assert_eq!(s.buffered_count(), MAX_RANGE_EXPANSION);
+
+        let nack = RangeNack {
+            ssrc_media: 1,
+            ranges: alloc::vec![PacketRange {
+                start: 0,
+                additional: 0xFFFF
+            }],
+        };
+
+        let start = std::time::Instant::now();
+        let out = s.on_range_nack(&nack);
+        let elapsed = start.elapsed();
+
+        assert_eq!(out.len(), MAX_RANGE_EXPANSION);
+        assert!(
+            elapsed < std::time::Duration::from_secs(2),
+            "range_nack lookup against a full buffer took {elapsed:?} — \
+             looks like an O(n) scan crept back in"
+        );
     }
 }

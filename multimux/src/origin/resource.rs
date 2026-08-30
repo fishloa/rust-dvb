@@ -41,8 +41,11 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
+use bytes::Bytes;
 use futures_util::stream;
-use hls_runtime::server::HlsRequest;
+use hls_runtime::server::{HlsBody, HlsRequest};
+use media_plane::trunk::{EventAnchor, Trunk};
+use transmux::{EmsgBox, PresentationTime};
 
 use crate::http::{self, BLOCKING_RELOAD_TIMEOUT};
 use crate::route::{ProgramServing, RouteHandle};
@@ -138,6 +141,7 @@ async fn dynamic_file(State(route): State<Arc<RouteHandle>>, Path(file): Path<St
     )
     .await;
     match http::into_response(resp, StatusCode::NOT_FOUND, |body| {
+        let body = inject_segment_events(&trunk, &file, body);
         resource_body_response(body)
     }) {
         // A resource that resolved NotFound might still be a whole-segment
@@ -182,6 +186,107 @@ fn parse_segment_filename(file: &str) -> Option<(&str, u32)> {
     let (track, seq) = rest.split_once('-')?;
     track.parse::<u32>().ok()?;
     Some((track, seq.parse().ok()?))
+}
+
+/// Inject DASH `emsg` boxes for a segment's resolved SCTE-35 events into
+/// served fMP4 segment bytes (issue #969) — the inband counterpart to
+/// `crate::output::dash`'s `<InbandEventStream>` MPD declaration.
+///
+/// Per CMAF, event boxes sit between `styp` and `moof`:
+/// `[styp][emsg*][moof][mdat]`. So this splices the serialized `emsg` boxes
+/// in immediately after `styp`. Only **resolved** events (already on this
+/// trunk's 90 kHz absolute clock, [`EventAnchor::Media`]) and only
+/// SCTE-35-sourced events are injected; non-segment resources (init, parts),
+/// segments with no (relevant) events, and non-SCTE-35 events all pass
+/// through unchanged.
+fn inject_segment_events(trunk: &Trunk, file: &str, body: HlsBody) -> HlsBody {
+    let HlsBody::Resource(bytes) = &body else {
+        return body;
+    };
+    let Some((_track, seq)) = parse_segment_filename(file) else {
+        return body;
+    };
+
+    let events = trunk.events_in_segment(seq);
+    if events.is_empty() {
+        return body;
+    }
+
+    // Build a serialized emsg box per SCTE-35 event. Skip everything else
+    // silently (a non-SCTE-35 event, or an unresolved [EventAnchor] that
+    // can't yet produce a presentation-time).
+    // The raw splice bytes live verbatim in `SourcePayload::Scte35`; we build
+    // the box directly from the raw bytes rather than via
+    // `timed_metadata::Timeline::to_emsg` (which needs an `EmsgConfig`).
+    let mut emsg_bytes = Vec::new();
+    for entry in &events {
+        let timed_metadata::event::SourcePayload::Scte35 { raw } = &entry.event.source else {
+            continue;
+        };
+        let EventAnchor::Media(media_time) = entry.anchor else {
+            continue;
+        };
+        let emsg = EmsgBox {
+            scheme_id_uri: "urn:scte:scte35:2013:bin",
+            value: "",
+            timescale: 90_000, // Trunk's 90 kHz clock
+            presentation_time: PresentationTime::Absolute(media_time.0),
+            // `event_duration` is a u32; saturate an over-long duration rather
+            // than truncating -- a client reading the box wants to know the
+            // break spans the whole segment, not a wrapped-around short value.
+            event_duration: entry
+                .event
+                .duration
+                .map(|d| {
+                    let ticks = d.0;
+                    if ticks > u64::from(u32::MAX) {
+                        0xFFFF_FFFF
+                    } else {
+                        ticks as u32
+                    }
+                })
+                .unwrap_or(0),
+            id: entry.event.id.unwrap_or(0),
+            message_data: raw,
+        };
+        if let Ok(box_bytes) = emsg.to_vec() {
+            emsg_bytes.extend_from_slice(&box_bytes);
+        }
+    }
+
+    if emsg_bytes.is_empty() {
+        return body;
+    }
+
+    // Splice the emsg boxes after the styp box, before moof. styp box layout:
+    // first 4 bytes = big-endian u32 size, next 4 bytes = "styp".
+    let segment = bytes.as_ref();
+    let spliced = if segment.len() >= 8 && &segment[4..8] == b"styp" {
+        let styp_size =
+            u32::from_be_bytes([segment[0], segment[1], segment[2], segment[3]]) as usize;
+        if styp_size <= segment.len() {
+            let mut out = Vec::with_capacity(segment.len() + emsg_bytes.len());
+            out.extend_from_slice(&segment[..styp_size]);
+            out.extend_from_slice(&emsg_bytes);
+            out.extend_from_slice(&segment[styp_size..]);
+            out
+        } else {
+            // Malformed styp size -- can't identify the split point; prepend
+            // the boxes rather than corrupting the file.
+            let mut out = Vec::with_capacity(segment.len() + emsg_bytes.len());
+            out.extend_from_slice(&emsg_bytes);
+            out.extend_from_slice(segment);
+            out
+        }
+    } else {
+        // No styp box (unexpected for CMAF, but be defensive): prepend.
+        let mut out = Vec::with_capacity(segment.len() + emsg_bytes.len());
+        out.extend_from_slice(&emsg_bytes);
+        out.extend_from_slice(segment);
+        out
+    };
+
+    HlsBody::Resource(Bytes::from(spliced))
 }
 
 /// Serve a not-yet-closed whole-segment filename (`seg-{track}-{seq}.m4s`)
@@ -298,6 +403,8 @@ struct PartCursor {
 mod tests {
     use super::*;
     use crate::route::RouteHandle;
+    use media_plane::trunk::TrunkConfig;
+    use timed_metadata::{MediaTime, TimeAnchor};
     use transmux::ll_hls::{PartInfo, SegmentInfo};
 
     fn part(seq: u32, idx: u32) -> PartInfo {
@@ -569,5 +676,107 @@ mod tests {
             StatusCode::SERVICE_UNAVAILABLE,
             "a route with no program announced yet must be 503 (not ready), not 404 (gone)"
         );
+    }
+
+    /// The workspace's existing `make_route` builds a `RouteHandle`, whose
+    /// `Trunk` is reachable through `ProgramServing::trunk()` — but a plain
+    /// closed-segment route carries no events in its event log, so for the
+    /// `inject_segment_events` unit tests below we build a bare `Trunk`
+    /// directly and publish a SCTE-35 event into it.
+    fn event_trunk() -> Arc<Trunk> {
+        let nz = |n: usize| std::num::NonZeroUsize::new(n).unwrap();
+        let config = TrunkConfig::new(nz(8), nz(8), nz(8), nz(8), nz(8));
+        let trunk = Trunk::new(config);
+        let writer = trunk.writer().expect("writer");
+        let seg_writer = trunk.segment_writer().expect("segment writer");
+
+        seg_writer.set_time_anchor(TimeAnchor {
+            pts_90k: 0,
+            utc_epoch_ms: 1_000_000_000_000,
+        });
+
+        // Parse a real SCTE-35 splice (a program-splice, so `at` is None) and
+        // publish it as a Media-anchored event at the start of segment 1.
+        let hex = "FC302100000000000000FFF01005000007D27FEF7F7E0020F580C0000000000088B9661D";
+        let splice_bytes: Vec<u8> = (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+            .collect();
+        let mut timeline = timed_metadata::Timeline::new();
+        let ev = timeline.push_scte35(&splice_bytes).unwrap();
+        writer.publish_event(
+            ev.clone(),
+            EventAnchor::Media(ev.at.unwrap_or(MediaTime(0))),
+        );
+
+        // Segment boundaries: segment 1 spans [0, 4_000_000), segment 2 from
+        // 4_000_000 on. The event at pts 0 falls inside segment 1.
+        seg_writer.note_segment_start(1, MediaTime(0));
+        seg_writer.note_segment_start(2, MediaTime(4_000_000));
+        trunk
+    }
+
+    #[test]
+    fn inject_segment_events_prepends_emsg_after_styp() {
+        // issue #969: a segment filename with a resolved SCTE-35 event must
+        // come back with a `[styp][emsg][moof]` shape -- emsg after styp.
+        let trunk = event_trunk();
+
+        // Minimal fake segment: styp box (12 bytes: size + "styp" + brand) + a
+        // moof placeholder.
+        let styp: [u8; 12] = [
+            0, 0, 0, 12, // size = 12
+            b's', b't', b'y', b'p', //
+            b'm', b's', b'd', b'h', // major brand
+        ];
+        let moof = b"moof_placeholder";
+        let mut seg_bytes = Vec::new();
+        seg_bytes.extend_from_slice(&styp);
+        seg_bytes.extend_from_slice(moof);
+
+        let body = HlsBody::Resource(Bytes::from(seg_bytes));
+        let result = inject_segment_events(&trunk, "seg-1-1.m4s", body);
+
+        let HlsBody::Resource(result_bytes) = result else {
+            panic!("expected Resource body");
+        };
+
+        // The result is larger (an emsg box was injected after styp).
+        assert!(
+            result_bytes.len() > 12 + moof.len(),
+            "emsg should have been injected"
+        );
+        // styp is still the leading box.
+        assert_eq!(&result_bytes[4..8], b"styp");
+        // The emsg box begins right after styp's 12-byte box: bytes [12..15].
+        assert_eq!(
+            &result_bytes[16..20],
+            b"emsg",
+            "emsg box should be immediately after styp"
+        );
+    }
+
+    #[test]
+    fn inject_segment_events_passthrough_for_init_and_eventless_segment() {
+        // Non-segment resources (init) and segments with no events pass
+        // through byte-identical.
+        let trunk = event_trunk();
+
+        let init_body = HlsBody::Resource(Bytes::from(vec![0xAA; 8]));
+        let init_result = inject_segment_events(&trunk, "init-1.mp4", init_body);
+        let HlsBody::Resource(init_bytes) = init_result else {
+            panic!("init expected Resource body");
+        };
+        assert_eq!(&init_bytes[..], &[0xAA; 8]);
+
+        // Segment 2 contains no events (the only event is in segment 1).
+        let seg_body = HlsBody::Resource(Bytes::from(vec![
+            0x00, 0x00, 0x00, 0x0C, b's', b't', b'y', b'p', 0, 0, 0, 0,
+        ]));
+        let seg_result = inject_segment_events(&trunk, "seg-1-2.m4s", seg_body);
+        let HlsBody::Resource(seg_bytes) = seg_result else {
+            panic!("segment expected Resource body");
+        };
+        assert_eq!(seg_bytes.len(), 12);
     }
 }

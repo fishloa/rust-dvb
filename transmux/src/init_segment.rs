@@ -239,11 +239,13 @@ impl Serialize for MovieHeaderBox {
         c += 4;
         buf[c..c + 2].copy_from_slice(&self.volume.to_be_bytes());
         c += 2;
+        buf[c..c + 10].fill(0);
         c += 10; // reserved
         for &m in &self.matrix {
             buf[c..c + 4].copy_from_slice(&m.to_be_bytes());
             c += 4;
         }
+        buf[c..c + 24].fill(0);
         c += 24; // pre_defined
         buf[c..c + 4].copy_from_slice(&self.next_track_id.to_be_bytes());
         c += 4;
@@ -383,9 +385,11 @@ impl Serialize for TrackHeaderBox {
             c += 4;
             buf[c..c + 4].copy_from_slice(&self.track_id.to_be_bytes());
             c += 4;
+            buf[c..c + 4].fill(0);
             c += 4; // reserved
             buf[c..c + 4].copy_from_slice(&(self.duration as u32).to_be_bytes());
             c += 4;
+            buf[c..c + 8].fill(0);
             c += 8; // reserved * 2
             buf[c..c + 2].copy_from_slice(&self.layer.to_be_bytes());
             c += 2;
@@ -393,6 +397,7 @@ impl Serialize for TrackHeaderBox {
             c += 2;
             buf[c..c + 2].copy_from_slice(&self.volume.to_be_bytes());
             c += 2;
+            buf[c..c + 2].fill(0);
             c += 2; // reserved
         } else {
             buf[c..c + 8].copy_from_slice(&self.creation_time.to_be_bytes());
@@ -401,17 +406,20 @@ impl Serialize for TrackHeaderBox {
             c += 8;
             buf[c..c + 4].copy_from_slice(&self.track_id.to_be_bytes());
             c += 4;
-            c += 4;
+            buf[c..c + 4].fill(0);
+            c += 4; // reserved
             buf[c..c + 8].copy_from_slice(&self.duration.to_be_bytes());
             c += 8;
-            c += 8;
+            buf[c..c + 8].fill(0);
+            c += 8; // reserved * 2
             buf[c..c + 2].copy_from_slice(&self.layer.to_be_bytes());
             c += 2;
             buf[c..c + 2].copy_from_slice(&self.alternate_group.to_be_bytes());
             c += 2;
             buf[c..c + 2].copy_from_slice(&self.volume.to_be_bytes());
             c += 2;
-            c += 2;
+            buf[c..c + 2].fill(0);
+            c += 2; // reserved
         }
         for &m in &self.matrix {
             buf[c..c + 4].copy_from_slice(&m.to_be_bytes());

@@ -4,6 +4,22 @@ All notable changes to this crate will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **#977**: `arq::Sender::on_range_nack`/`on_generic_nack` looked up each
+  expanded sequence number with an O(n) linear scan of the sent-packet
+  buffer, so an adversarial RangeNack (`Additional = 0xFFFF`, TR-06-1
+  §5.3.4's own called-out worst case) against a deep buffer multiplied into
+  tens of millions of comparisons. The lookup buffer is now indexed by
+  sequence number (a `BTreeMap`, so the crate stays `no_std`+`alloc`),
+  turning each lookup into O(log n).
+- **#978**: `arq::Receiver::feed` backfilled one `MissingState` BTreeMap
+  entry per skipped sequence number with no cap on the gap size, so a single
+  forged/spoofed packet claiming a sequence number tens of thousands ahead
+  of the last-received one could insert tens of thousands of entries. Gaps
+  wider than `MAX_GAP` (512) are now treated as a stream reset (resync on
+  the new sequence number, drop stale tracking state) instead of being
+  backfilled.
+
 ## [0.1.0] - 2026-08-11
 
 ### Changed

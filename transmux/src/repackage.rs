@@ -61,16 +61,36 @@ fn anchor_index(media: &Media) -> Result<usize> {
 
 /// The composition (presentation) time of each sample of a track, in that
 /// track's media timescale, from a zero decode-time base. Element `i` is
-/// `sum(duration[0..i]) + composition_offset[i]`.
+/// `dts[i] + composition_offset[i]`, where `dts[i]` is the sample's own
+/// absolute [`Sample::dts`](crate::pipeline::Sample::dts) — rebased so the
+/// *first* sample with a known `dts` sits at zero — falling back to a
+/// duration-accumulated reconstruction only for a sample that genuinely
+/// carries no timestamp.
+///
+/// Reading each sample's real `dts` (issue #993) rather than only ever
+/// accumulating `duration` matters whenever the two can diverge: a
+/// discontinuity/gap between fragments, a dropped or duplicated sample the
+/// duration sum doesn't reflect, or ordinary sub-tick rounding between a
+/// track's nominal per-sample duration and its measured decode-time deltas
+/// (e.g. an AAC frame's 1024-sample duration rescaled from a 90 kHz PES
+/// clock). A pure duration-accumulated reconstruction silently drifts from
+/// the real timeline in all of these cases, which — for [`Media::trim`] in
+/// particular — can shift which samples the window boundary actually
+/// selects.
 ///
 /// Returned as `i64` because `composition_offset` is signed and may push an
 /// early sample's presentation time slightly negative.
 fn presentation_times(track: &Track) -> Vec<i64> {
     let mut out = Vec::with_capacity(track.samples.len());
-    let mut dts: i64 = 0;
+    // Rebase onto the first sample's own absolute dts (when any sample
+    // carries one) so the window semantics documented above stay zero-based
+    // regardless of the source's real (typically non-zero) absolute dts.
+    let base = track.samples.iter().find_map(|s| s.dts).unwrap_or(0);
+    let mut running_dts: i64 = 0;
     for s in &track.samples {
-        out.push(dts + s.composition_offset() as i64);
-        dts += s.duration.unwrap_or(0) as i64;
+        let sample_dts = s.dts.map(|d| d - base).unwrap_or(running_dts);
+        out.push(sample_dts + s.composition_offset() as i64);
+        running_dts = sample_dts + s.duration.unwrap_or(0) as i64;
     }
     out
 }

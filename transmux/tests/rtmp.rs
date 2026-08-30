@@ -236,7 +236,7 @@ fn amf0_connect_command_round_trip() {
             ("fpad".into(), AmfValue::Boolean(false)),
         ])],
     };
-    let body = cmd.to_body();
+    let body = cmd.to_body().expect("encode connect");
     let decoded = Command::parse(&body).expect("decode connect");
     assert_eq!(decoded, cmd, "connect command round-trips");
     assert_eq!(decoded.name, "connect");
@@ -247,7 +247,11 @@ fn amf0_connect_command_round_trip() {
     if let AmfValue::Object(m) = &mut cmd2.arguments[0] {
         m[2].1 = AmfValue::Number(3.0); // objectEncoding 0 -> 3
     }
-    assert_ne!(cmd2.to_body(), body, "mutating a member changes the bytes");
+    assert_ne!(
+        cmd2.to_body().expect("encode mutated connect"),
+        body,
+        "mutating a member changes the bytes"
+    );
 
     // Protocol-control round-trip for good measure (Set Peer Bandwidth carries a
     // trailing limit-type byte — bites on any 4-vs-5 length confusion).

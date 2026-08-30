@@ -100,6 +100,8 @@ pub struct CaPmtReply {
 
 const REPLY_PREFIX: usize = 4; // program_number(2) + version/cni/flag/enable(2)
 const ES_LEN: usize = 3; // reserved/elem_pid(2) + flag/enable(1)
+/// Maximum value the 13-bit `elementary_PID` field can hold.
+const MAX_PID: u16 = 0x1FFF;
 
 impl<'a> Parse<'a> for CaPmtReply {
     type Error = Error;
@@ -162,6 +164,14 @@ impl Serialize for CaPmtReply {
         super::apdu_len(REPLY_PREFIX + self.streams.len() * ES_LEN)
     }
     fn serialize_into(&self, buf: &mut [u8]) -> Result<usize> {
+        for s in &self.streams {
+            if s.elementary_pid > MAX_PID {
+                return Err(Error::InvalidObject {
+                    what: "ca_pmt_reply ES elementary_PID",
+                    reason: "exceeds 13-bit PID range (0x1FFF)",
+                });
+            }
+        }
         let body = REPLY_PREFIX + self.streams.len() * ES_LEN;
         let mut pos = super::write_apdu_header(tag::CA_PMT_REPLY, body, buf)?;
         buf[pos..pos + 2].copy_from_slice(&self.program_number.to_be_bytes());
@@ -243,6 +253,22 @@ mod tests {
         assert_eq!(parsed, r);
         assert!(parsed.ca_enable.is_none());
         assert!(parsed.streams[0].ca_enable.is_none());
+    }
+
+    #[test]
+    fn oversized_pid_rejected_not_truncated() {
+        let r = CaPmtReply {
+            program_number: 1,
+            version_number: 0,
+            current_next_indicator: true,
+            ca_enable: None,
+            streams: alloc::vec![CaPmtReplyStream {
+                elementary_pid: 0x2001, // 14-bit value, out of 13-bit range
+                ca_enable: None,
+            }],
+        };
+        let err = r.serialize_into(&mut [0u8; 32]).unwrap_err();
+        assert!(matches!(err, Error::InvalidObject { .. }));
     }
 
     #[test]

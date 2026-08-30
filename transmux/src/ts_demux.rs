@@ -1652,7 +1652,12 @@ fn finalize_probe(
             let info = crate::sps::decode_avc_sps(sps_bytes).ok();
             let (width, height) = info
                 .as_ref()
-                .map(|i| (i.width as u16, i.height as u16))
+                .map(|i| {
+                    (
+                        i.width.min(u16::MAX as u32) as u16,
+                        i.height.min(u16::MAX as u32) as u16,
+                    )
+                })
                 .unwrap_or((0, 0));
             // The avcC high-profile extension (chroma_format_idc + bit depths)
             // exists only for the High-family profiles that carry it

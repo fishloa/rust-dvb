@@ -36,6 +36,24 @@ use super::ArqConfig;
 use super::rtt::RttEstimator;
 use super::seq;
 
+/// Maximum forward sequence-number gap [`Receiver::feed`] will treat as
+/// ordinary packet loss and backfill with [`MissingState`] entries (#978).
+///
+/// TR-06-1 doesn't bound how far ahead a genuinely-lost run of packets can
+/// be, but an *unauthenticated* RTP sequence number lets a spoofed packet
+/// claim any gap up to the full 16-bit space: filling every skipped
+/// sequence number one `BTreeMap` entry at a time turns one forged packet
+/// (`seq = highest + 0x8000`) into ~32K allocations. A gap this wide is
+/// never ordinary loss — normal loss is bounded by the receiver buffer
+/// depth, which is orders of magnitude smaller — so beyond this threshold
+/// [`Receiver::feed`] treats the arrival as a stream reset instead: drop
+/// whatever was being tracked and resynchronise on the new sequence number,
+/// rather than backfilling the gap. **Implementation policy**, not a
+/// TR-06-1 number — chosen as a generous multiple of Appendix B's suggested
+/// default buffer depth in packets at a plausible bitrate, not a literal
+/// transcription.
+const MAX_GAP: u16 = 512;
+
 /// Outcome of one [`Receiver::feed`] call.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[non_exhaustive]
@@ -158,15 +176,29 @@ impl Receiver {
                 self.next_expected = Some(seq_number);
             }
             Some(highest) if seq::seq_gt(seq_number, highest) => {
-                let mut s = seq::seq_next(highest);
-                while s != seq_number {
-                    self.missing.entry(s).or_insert(MissingState {
-                        first_missing_at: now,
-                        promoted_at: None,
-                        requests_sent: 0,
-                        next_request_due: None,
-                    });
-                    s = seq::seq_next(s);
+                // seq_gt above guarantees seq_diff is in (0, SEQ_HALF], so
+                // this always fits in a u16 — the cast is not lossy.
+                let gap = seq::seq_diff(seq_number, highest) as u16;
+                if gap > MAX_GAP {
+                    // #978: an unauthenticated jump this large is far more
+                    // likely a spoofed/forged packet than genuine loss —
+                    // resync instead of backfilling ~`gap` MissingState
+                    // entries for a run that (if real) massively exceeds any
+                    // plausible receiver-buffer depth.
+                    self.missing.clear();
+                    self.received_ahead.clear();
+                    self.next_expected = Some(seq_number);
+                } else {
+                    let mut s = seq::seq_next(highest);
+                    while s != seq_number {
+                        self.missing.entry(s).or_insert(MissingState {
+                            first_missing_at: now,
+                            promoted_at: None,
+                            requests_sent: 0,
+                            next_request_due: None,
+                        });
+                        s = seq::seq_next(s);
+                    }
                 }
                 self.highest_received = Some(seq_number);
             }
@@ -635,5 +667,85 @@ mod tests {
                 },
             ]
         );
+    }
+
+    /// #978 regression: a gap right at the `MAX_GAP` boundary (`gap ==
+    /// MAX_GAP`, not yet over it) is still tracked as ordinary loss — one
+    /// `MissingState` per skipped seq, no reset.
+    #[test]
+    fn a_gap_at_the_max_gap_boundary_is_still_tracked_as_ordinary_loss() {
+        let mut r = Receiver::new(cfg());
+        r.feed(0, Duration::ZERO);
+        let jump = seq::seq_add(0, MAX_GAP); // gap == MAX_GAP exactly
+        let out = r.feed(jump, Duration::ZERO);
+        assert!(out.delivered.is_empty());
+        assert_eq!(r.missing_count(), usize::from(MAX_GAP - 1));
+        assert_eq!(r.next_expected(), Some(1));
+    }
+
+    /// One past the boundary (`gap == MAX_GAP + 1`) flips to the reset path.
+    #[test]
+    fn one_past_the_max_gap_boundary_resets_instead() {
+        let mut r = Receiver::new(cfg());
+        r.feed(0, Duration::ZERO);
+        let jump = seq::seq_add(0, MAX_GAP + 1); // gap == MAX_GAP + 1
+        let out = r.feed(jump, Duration::ZERO);
+        assert_eq!(r.missing_count(), 0);
+        assert_eq!(out.delivered, alloc::vec![jump]);
+        assert_eq!(r.next_expected(), Some(seq::seq_next(jump)));
+    }
+
+    /// #978 regression: a forged packet claiming a sequence number far ahead
+    /// of `highest` (e.g. `highest + 5000`) must not backfill tens of
+    /// thousands of `MissingState` entries — it is treated as a stream
+    /// reset instead, so `missing_count` stays bounded regardless of how
+    /// large the claimed jump is. (5000 rather than the full 0x8000/half-
+    /// space jump used elsewhere in the crate's docs: exactly half the
+    /// 16-bit sequence space is the wrap-ambiguity boundary of
+    /// `seq::seq_diff` itself — irrelevant to this DoS fix.)
+    #[test]
+    fn a_sequence_jump_past_max_gap_resets_instead_of_flooding_missing() {
+        let mut r = Receiver::new(cfg());
+        r.feed(0, Duration::ZERO);
+        r.feed(1, Duration::ZERO);
+        r.feed(2, Duration::ZERO); // seq 0,1,2 delivered, nothing missing
+
+        // Forged/spoofed packet: seq jumps by far more than MAX_GAP.
+        let forged = seq::seq_add(2, 5000);
+        let out = r.feed(forged, Duration::ZERO);
+
+        // No amplification: `missing` was NOT backfilled with ~32K entries.
+        assert!(
+            r.missing_count() <= usize::from(MAX_GAP),
+            "missing_count() = {} — sequence jump was not capped",
+            r.missing_count()
+        );
+        assert_eq!(r.missing_count(), 0);
+
+        // Resynchronised on the new sequence number rather than treating it
+        // as a delivery gap.
+        assert_eq!(out.delivered, alloc::vec![forged]);
+        assert_eq!(r.next_expected(), Some(seq::seq_next(forged)));
+    }
+
+    /// The reset also clears any previously-buffered out-of-order packets —
+    /// they're irrelevant once the stream has resynchronised past them.
+    #[test]
+    fn sequence_reset_clears_previously_buffered_received_ahead() {
+        let mut r = Receiver::new(cfg());
+        r.feed(0, Duration::ZERO);
+        r.feed(2, Duration::ZERO); // seq 1 missing, seq 2 buffered ahead
+        assert_eq!(r.missing_count(), 1);
+
+        let forged = seq::seq_add(2, 5000);
+        r.feed(forged, Duration::ZERO);
+        assert_eq!(r.missing_count(), 0);
+        assert_eq!(r.next_expected(), Some(seq::seq_next(forged)));
+
+        // Confirm `received_ahead` was really cleared, not just `missing`:
+        // feeding the old buffered seq 2 again must not spuriously delivered
+        // anything since it's now far behind `next_expected`.
+        let out = r.feed(2, Duration::ZERO);
+        assert!(out.delivered.is_empty());
     }
 }
