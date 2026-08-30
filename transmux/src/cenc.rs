@@ -1045,6 +1045,13 @@ pub struct SchemeInformationBox {
 impl<'a> Parse<'a> for SchemeInformationBox {
     type Error = Error;
     fn parse(bytes: &'a [u8]) -> Result<Self> {
+        if bytes.len() < BOX_HDR {
+            return Err(Error::BufferTooShort {
+                need: BOX_HDR,
+                have: bytes.len(),
+                what: "schi",
+            });
+        }
         let body = &bytes[BOX_HDR..];
         let mut tenc = None;
         let mut extra_boxes = Vec::new();
@@ -1123,6 +1130,13 @@ pub struct ProtectionSchemeInfoBox {
 impl<'a> Parse<'a> for ProtectionSchemeInfoBox {
     type Error = Error;
     fn parse(bytes: &'a [u8]) -> Result<Self> {
+        if bytes.len() < BOX_HDR {
+            return Err(Error::BufferTooShort {
+                need: BOX_HDR,
+                have: bytes.len(),
+                what: "sinf",
+            });
+        }
         let body = &bytes[BOX_HDR..];
         if body.len() < 8 + 4 {
             return Err(Error::BufferTooShort {

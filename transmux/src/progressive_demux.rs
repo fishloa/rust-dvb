@@ -441,6 +441,17 @@ fn samples_from_stbl(file: &[u8], trak: &TrackBox) -> Result<Vec<Sample>> {
     let chunk_offsets = chunk_offsets(co64, stco)?;
     let samples_per_chunk = expand_stsc(stsc, chunk_offsets.len());
     let total_samples: usize = samples_per_chunk.iter().map(|&n| n as usize).sum();
+    // `total_samples` is a wire-derived sum (stsc runs x co64/stco chunk
+    // count) fed straight into several `Vec::with_capacity(total_samples)` /
+    // `vec![_; total_samples]` allocations below (#987). No sample can occupy
+    // fewer than 1 byte of `file`, so `total_samples` can never legitimately
+    // exceed the file length — reject it up front rather than let a hostile
+    // stsc/stco pairing drive a multi-GB allocation from a tiny input.
+    if total_samples > file.len() {
+        return Err(Error::InvalidInput(
+            "stsc-derived total sample count exceeds the file size",
+        ));
+    }
 
     let layout = chunk_layout(&chunk_offsets, &samples_per_chunk, stsz, total_samples)?;
     let durations = expand_stts(stts, total_samples)?;

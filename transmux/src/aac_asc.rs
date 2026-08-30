@@ -27,6 +27,10 @@ use broadcast_common::{Parse, Serialize};
 
 const ADTS_HEADER_SIZE: usize = 7;
 
+/// Maximum `frame_length` an ADTS fixed header can carry: a 13-bit field
+/// (ISO/IEC 13818-7:2003 §A.2.2.3, header size included) — `2^13 - 1`.
+const ADTS_FRAME_LENGTH_MAX: u16 = 8191;
+
 // --- AudioObjectType §1.5.1.1 ---
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -647,6 +651,13 @@ impl AudioSpecificConfig {
                 field: "frame_len",
                 value: frame_len as u64,
                 reason: "too small",
+            });
+        }
+        if frame_len > ADTS_FRAME_LENGTH_MAX {
+            return Err(Error::InvalidValue {
+                field: "frame_len",
+                value: frame_len as u64,
+                reason: "exceeds ADTS 13-bit frame_length maximum (8191)",
             });
         }
         Ok(build_adts_header(

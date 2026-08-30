@@ -483,7 +483,22 @@ impl TrackFragmentRunBox {
         let has_flg = tr_flags & TRUN_SAMPLE_FLAGS_PRESENT != 0;
         let has_cto = tr_flags & TRUN_SAMPLE_COMPOSITION_TIME_OFFSET_PRESENT != 0;
 
-        let mut samples = Vec::with_capacity(sc);
+        // Each present per-sample field is a 32-bit word (ISO/IEC 14496-12
+        // §8.8.8.2); bound the wire-declared `sample_count` against the
+        // remaining buffer before trusting it for `Vec::with_capacity` (#983).
+        // The loop below still walks the raw (unbounded) `sc` — each iteration
+        // re-checks its own bounds and errors out on truncated input, exactly
+        // as the sibling `stts`/`stsc`/etc. parsers do.
+        let entry_size = [has_dur, has_sz, has_flg, has_cto]
+            .iter()
+            .filter(|&&present| present)
+            .count()
+            * 4;
+        let mut samples = Vec::with_capacity(crate::init_segment::bounded_entry_count(
+            payload.len().saturating_sub(c),
+            entry_size,
+            sc,
+        ));
         for _ in 0..sc {
             let mut s = TrunSample::new();
             if has_dur {

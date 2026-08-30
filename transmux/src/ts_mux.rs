@@ -869,7 +869,14 @@ fn build_es_payload(plan: &EsPlan, sample: &Sample) -> Result<Vec<u8>> {
                 .asc
                 .as_ref()
                 .ok_or(Error::InvalidInput("AAC ES has no AudioSpecificConfig"))?;
-            let frame_len = (sample.data.len() + 7) as u16; // 7-byte ADTS header
+            let frame_len_usize = sample.data.len() + 7; // 7-byte ADTS header
+            let frame_len: u16 = frame_len_usize
+                .try_into()
+                .map_err(|_| Error::InvalidValue {
+                    field: "frame_len",
+                    value: frame_len_usize as u64,
+                    reason: "exceeds ADTS 13-bit frame_length maximum (8191)",
+                })?;
             let header = asc.to_adts_header(frame_len)?;
             let mut out = Vec::with_capacity(header.len() + sample.data.len());
             out.extend_from_slice(&header);

@@ -371,7 +371,11 @@ impl<'a> WebmDemux<'a> {
         let mut r = EbmlReader::new(body);
         while let Some((id, child)) = r.next_element()? {
             match id {
-                CLUSTER_TIMESTAMP => cluster_ts = read_uint(child) as i64,
+                CLUSTER_TIMESTAMP => {
+                    cluster_ts = i64::try_from(read_uint(child)).map_err(|_| {
+                        Error::InvalidInput("webm cluster timestamp exceeds i64 range")
+                    })?;
+                }
                 SIMPLE_BLOCK => {
                     blocks.push(parse_block(child, cluster_ts, timestamp_scale_ns, true)?);
                 }
@@ -454,7 +458,9 @@ fn parse_block(
 
     // Presentation time in IR ticks (ms): (cluster_ts + rel_ts) ticks × scale(ns)
     // → ns → ms.  ns = raw_ticks × timestamp_scale_ns; ms = ns / (NS_PER_SECOND / IR_TIMESCALE).
-    let raw_ticks = cluster_ts + rel_ts;
+    let raw_ticks = cluster_ts.checked_add(rel_ts).ok_or(Error::InvalidInput(
+        "webm block timestamp: cluster_ts + rel_ts overflowed i64",
+    ))?;
     let ns = raw_ticks.saturating_mul(timestamp_scale_ns as i64);
     let ns_per_ir_tick = (NS_PER_SECOND / IR_TIMESCALE as u64) as i64;
     let pts_ticks = ns / ns_per_ir_tick;
