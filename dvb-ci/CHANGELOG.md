@@ -6,6 +6,14 @@ versioning.
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-08-30
+
+### Fixed
+- **#972**: `CaPmtReply::serialize_into` and `host_control::Replace::serialize_into`
+  silently truncated PID values > 0x1FFF to 13 bits (the wire width). They now
+  reject out-of-range PIDs with `Error::InvalidObject` instead of silently
+  producing a different PID on the wire.
+
 ## [0.8.0] - 2026-08-11
 
 ### Changed

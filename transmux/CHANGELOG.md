@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-08-30
+
+### Fixed
+- **OOM guards** for unbounded wire-driven allocations:
+  - **#987**: `progressive_demux` `total_samples` (stsc × stco/co64 sum) now
+    bounded against file size; protects 7 downstream capacity-sized allocations.
+  - **#988**: `sample_groups` sgpd/sbgp/subs `entry_count` now guarded by
+    `bounded_entry_count` against remaining buffer length.
+  - **#983**: `movie_fragment` trun `sample_count` now guarded by
+    `bounded_entry_count` against remaining buffer and per-sample field size.
+- **Parse panic guards**:
+  - **#989**: `cenc::SchemeInformationBox::parse` and
+    `ProtectionSchemeInfoBox::parse` panicked on input shorter than `BOX_HDR`.
+    Now returns `BufferTooShort` instead.
+- **Silent truncation/overflow fixes**:
+  - **#996**: `composition_offset()` bare `as i32` cast → clamped to `i32` range.
+  - **#997**: AVC width/height bare `as u16` → `.min(u16::MAX as u32) as u16`,
+    matching the HEVC path.
+  - **#981**: ADTS frame_len bare `as u16` → 13-bit max validation (8191).
+  - **#984**: AMF0 string length bare `as u16` → `u16::MAX` length check with
+    error on overflow.
+  - **#998**: WebM `CLUSTER_TIMESTAMP` uses `i64::try_from`; `cluster_ts + rel_ts`
+    uses `checked_add` with error on overflow.
+- **MKV u64 offsets** (#995): `running_offset`/`pos_info`/`pos_tracks`/
+  `cluster_offsets` widened from `u32` to `u64`, preventing wrap on files > 4 GB.
+- **Reserved field zeroing** (#986): mvhd/tkhd `serialize_into` now zero-fills
+  all reserved byte regions instead of skipping them with `c += N`.
+- **CENC seig detection** (#990): content using `seig` sample-group key rotation
+  (ISO/IEC 23001-7 §12.2) is now detected and explicitly rejected with
+  `Error::UnsupportedFeature` instead of silently decrypting with the wrong key.
+- **mdat lower-bound validation** (#991): `data_offset` values pointing into the
+  moof itself (below mdat payload start) are now rejected.
+- **Splice match_tracks non-injective mapping** (#992): track matching now
+  tracks claimed indices, preventing two source tracks from mapping to the
+  same destination track in dual-audio content.
+- **Repackage presentation_times** (#993): now uses each sample's absolute
+  `dts` when available, falling back to the running-sum accumulator only when
+  a sample has no explicit dts.
+- **LL-DASH Timeline addressing** (#994): `inject_ll` now matches both
+  self-closing `<SegmentTemplate …/>` and non-self-closing
+  `<SegmentTemplate>…</SegmentTemplate>` (Timeline/`$Time$` addressing).
+
 ## [0.24.0] - 2026-08-11
 
 ### Fixed

@@ -468,7 +468,7 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "caption-convert"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "broadcast-common",
  "cc-data",
@@ -976,7 +976,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "dvb-bbframe"
-version = "10.0.0"
+version = "10.0.1"
 dependencies = [
  "broadcast-common",
  "criterion",
@@ -989,7 +989,7 @@ dependencies = [
 
 [[package]]
 name = "dvb-ci"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "broadcast-common",
  "dvb-si",
@@ -1012,7 +1012,7 @@ dependencies = [
 
 [[package]]
 name = "dvb-conformance"
-version = "10.0.0"
+version = "10.0.1"
 dependencies = [
  "broadcast-common",
  "dvb-si",
@@ -1042,7 +1042,7 @@ dependencies = [
 
 [[package]]
 name = "dvb-si"
-version = "10.0.0"
+version = "10.0.1"
 dependencies = [
  "broadcast-common",
  "bytes",
@@ -1097,7 +1097,7 @@ dependencies = [
 
 [[package]]
 name = "dvb-t2mi"
-version = "10.0.0"
+version = "10.0.1"
 dependencies = [
  "broadcast-common",
  "bytes",
@@ -1115,7 +1115,7 @@ dependencies = [
 
 [[package]]
 name = "dvb-tools"
-version = "10.0.0"
+version = "10.0.1"
 dependencies = [
  "clap",
  "dvb-si",
@@ -2963,7 +2963,7 @@ dependencies = [
 
 [[package]]
 name = "rist-runtime"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "broadcast-common",
  "rtcp-packet",
@@ -3166,7 +3166,7 @@ dependencies = [
 
 [[package]]
 name = "rtcp-packet"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "broadcast-common",
  "serde",
@@ -4039,7 +4039,7 @@ dependencies = [
 
 [[package]]
 name = "transmux"
-version = "0.24.0"
+version = "0.24.1"
 dependencies = [
  "aes",
  "broadcast-common",

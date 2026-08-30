@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [10.0.1] - 2026-08-30
+
+### Fixed
+- **#971**: EIT schedule collector never completed on sparse broadcasts.
+  `segment_last_section_number` was parsed but not used in the completion
+  check — the collector demanded all `last_section_number + 1` sections
+  even when a sparse 3-hour segment declared only its first section present
+  (EN 300 468 §5.2.4). Completion now tracks each 8-section segment's own
+  declared range independently.
+
 ## [10.0.0] - 2026-08-11
 
 ### Fixed

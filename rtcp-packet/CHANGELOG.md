@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-30
+
+### Fixed
+- **#973**: RTCP length-field serialization used a bare `as u16` cast that
+  silently wrapped for payloads > ~256 KB. Now uses `u16::try_from` and
+  returns `Error::InvalidValue` on overflow.
+
 ## [0.3.0] - 2026-08-11
 
 ### Changed

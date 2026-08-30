@@ -4,6 +4,18 @@ All notable changes to this crate. Format: [Keep a Changelog](https://keepachang
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-08-30
+
+### Fixed
+- **#974**: `parse_webvtt` rejected its own `write_segment` output — the
+  `X-TIMESTAMP-MAP` header line was misread as a cue identifier. Now
+  recognised and skipped during header parsing.
+- **#975**: `parse_srt` rejected UTF-8 BOM-prefixed files. BOM is now
+  stripped before parsing, matching `parse_webvtt`'s existing behaviour.
+- **#976**: `write_srt` emitted self-rejecting output for cues containing
+  empty interior lines (`"line1\n\nline3"`). The `\n\n` was interpreted as a
+  block delimiter on re-parse. Empty lines within cue text are now skipped.
+
 ## [0.1.0] - 2026-08-11
 
 ### Added

@@ -4,6 +4,8 @@ All notable changes to this crate will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-08-30
+
 ### Fixed
 - **#977**: `arq::Sender::on_range_nack`/`on_generic_nack` looked up each
   expanded sequence number with an O(n) linear scan of the sent-packet
