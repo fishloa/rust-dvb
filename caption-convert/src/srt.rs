@@ -38,6 +38,12 @@ pub fn format_srt_timestamp(t: MediaTime) -> String {
 
 /// Render cues as an SRT document: `<index>\n<timings>\n<payload>\n\n` per
 /// cue, 1-based sequential index.
+///
+/// A cue text line that is empty is skipped: SRT has no formal spec, but no
+/// real encoder/player supports a blank *interior* line in a cue's payload,
+/// since [`parse_srt`] (like every other SRT reader) reads a blank line as
+/// the delimiter ending the block -- emitting one verbatim would make this
+/// writer's own output unparseable (issue #976).
 #[must_use]
 pub fn write_srt(cues: &[Cue]) -> String {
     let mut out = String::new();
@@ -50,6 +56,9 @@ pub fn write_srt(cues: &[Cue]) -> String {
             format_srt_timestamp(cue.end)
         );
         for line in cue.text.lines() {
+            if line.is_empty() {
+                continue;
+            }
             out.push_str(line);
             out.push('\n');
         }
@@ -60,11 +69,13 @@ pub fn write_srt(cues: &[Cue]) -> String {
 
 /// Parse an SRT document into [`Cue`]s.
 ///
-/// Tolerates a missing leading sequence-number line (some encoders omit it)
-/// and any of `\n`, `\r\n`, or a lone `\r` as a line ending -- SRT has no
-/// formal spec, but real encoders/players are at least as permissive about
-/// line endings as W3C WebVTT's own three-terminator-form definition (the
-/// same private `normalize_line_endings` helper is shared with
+/// Tolerates a leading UTF-8 BOM (`U+FEFF`, common from Windows-authored
+/// files -- the same tolerance [`crate::webvtt::parse_webvtt`] already has,
+/// issue #975), a missing leading sequence-number line (some encoders omit
+/// it), and any of `\n`, `\r\n`, or a lone `\r` as a line ending -- SRT has
+/// no formal spec, but real encoders/players are at least as permissive
+/// about line endings as W3C WebVTT's own three-terminator-form definition
+/// (the same private `normalize_line_endings` helper is shared with
 /// [`crate::webvtt::parse_webvtt`]).
 ///
 /// # Errors
@@ -73,6 +84,7 @@ pub fn write_srt(cues: &[Cue]) -> String {
 /// [`Error::InvalidTimestamp`] if a timestamp does not match
 /// `(hh:)?mm:ss,ttt`.
 pub fn parse_srt(input: &str) -> Result<Vec<Cue>, Error> {
+    let input = input.strip_prefix('\u{FEFF}').unwrap_or(input); // optional BOM
     let normalized = normalize_line_endings(input);
     let mut cues = Vec::new();
 
@@ -210,5 +222,33 @@ mod tests {
     fn parse_rejects_bad_sequence_number() {
         let doc = "not-a-number\n00:00:00,000 --> 00:00:01,000\nhi\n";
         assert!(parse_srt(doc).is_err());
+    }
+
+    #[test]
+    fn parse_strips_leading_bom() {
+        // Issue #975: a UTF-8 BOM-prefixed file (common from Windows
+        // authoring tools) used to make the first block's sequence-number
+        // line unparseable, since the BOM landed at the start of "1".
+        let doc = "\u{FEFF}1\n00:00:00,000 --> 00:00:01,000\nHello\n\n";
+        let cues = parse_srt(doc).unwrap();
+        assert_eq!(cues, alloc::vec![cue(0, 90_000, "Hello")]);
+    }
+
+    #[test]
+    fn write_srt_round_trips_cues_with_empty_interior_lines() {
+        // Issue #976: a cue whose text has a blank interior line (e.g.
+        // "line1\n\nline3") used to make `write_srt`'s own output
+        // unparseable by `parse_srt`, since the emitted blank line reads as
+        // the SRT block delimiter. `write_srt` now drops empty lines (SRT
+        // has no way to represent them), so round-tripping the *rendered*
+        // text (not the original multi-paragraph text) must succeed.
+        let cues = alloc::vec![cue(0, 90_000, "line1\n\nline3")];
+        let doc = write_srt(&cues);
+        assert!(
+            !doc.contains("\n\n\n"),
+            "cue body must not contain a blank interior line: {doc:?}"
+        );
+        let parsed = parse_srt(&doc).unwrap();
+        assert_eq!(parsed, alloc::vec![cue(0, 90_000, "line1\nline3")]);
     }
 }
