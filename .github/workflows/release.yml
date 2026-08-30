@@ -146,9 +146,13 @@ jobs:
   # from this lockstep tag. Its compiled binaries attach to the same Release.
   # It is also the one crate here docs.rs cannot document (no library target),
   # so the binary IS its deliverable.
-  binaries:
-    needs: publish
-    uses: ./.github/workflows/reusable-binaries.yml
-    with:
-      crate: dvb-tools
-      bin: dvb-tools
+  #
+  # TEMPORARILY DISABLED: ubuntu-24.04-arm runner causes startup_failure on
+  # public repos without ARM runner access. Re-enable once the runner is
+  # available, or switch to a cross-compilation approach.
+  # binaries:
+  #   needs: publish
+  #   uses: ./.github/workflows/reusable-binaries.yml
+  #   with:
+  #     crate: dvb-tools
+  #     bin: dvb-tools
